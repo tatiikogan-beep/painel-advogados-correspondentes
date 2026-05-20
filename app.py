@@ -24,12 +24,10 @@ COR_DESTAQUE   = "#A52A2A"
 LOGO_B64 = ""
 
 def get_logo_b64():
-        try:
-                    with open("logo.png", "rb") as f:
-                                    return base64.b64encode(f.read()).decode()
-                            except:
-                    return ""
-
+    import os
+    if os.path.isfile("logo.png"):
+        return base64.b64encode(open("logo.png", "rb").read()).decode()
+    return ""
 st.markdown(f"""
 <style>
     /* Fundo geral */
