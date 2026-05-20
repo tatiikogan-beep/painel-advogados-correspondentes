@@ -3,558 +3,496 @@ import pandas as pd
 from datetime import datetime, date, timedelta
 import plotly.express as px
 from supabase import create_client, Client
+import io
+import base64
 
 st.set_page_config(
-    page_title="Painel – Advogados Correspondentes",
-    page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+        page_title="Painel – Advogados Correspondentes",
+        page_icon="⚖️",
+        layout="wide",
+        initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-<style>
-div[data-testid="stMetric"] {
-    background: white; border-radius: 10px; padding: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.08); border-top: 4px solid #3949ab;
-}
-</style>
-""", unsafe_allow_html=True)
+# ── Paleta de cores Imaculada Gordiano ────────────────────────────────────────
+COR_VERMELHO   = "#8B1A1A"   # vermelho escuro do escudo
+COR_DOURADO    = "#C8A951"   # dourado do escudo
+COR_BRANCO     = "#FFFFFF"
+COR_CINZA_BG   = "#F5F5F5"
+COR_TEXTO      = "#2C2C2C"
+COR_DESTAQUE   = "#A52A2A"
 
-# ── Conexão Supabase ─────────────────────────────────────────────────────────
+LOGO_B64 = ""
+
+def get_logo_b64():
+        try:
+                    with open("logo.png", "rb") as f:
+                                    return base64.b64encode(f.read()).decode()
+                            except:
+                    return ""
+
+st.markdown(f"""
+<style>
+    /* Fundo geral */
+        .stApp {{ background-color: {COR_CINZA_BG}; }}
+
+            /* Sidebar */
+                section[data-testid="stSidebar"] {{
+                        background: linear-gradient(180deg, {COR_VERMELHO} 0%, #5a1010 100%);
+                            }}
+                                section[data-testid="stSidebar"] * {{
+                                        color: {COR_BRANCO} !important;
+                                            }}
+                                                section[data-testid="stSidebar"] .stRadio label {{
+                                                        color: {COR_BRANCO} !important;
+                                                            }}
+
+                                                                /* Métricas */
+                                                                    div[data-testid="stMetric"] {{
+                                                                            background: {COR_BRANCO};
+                                                                                    border-radius: 10px;
+                                                                                            padding: 14px;
+                                                                                                    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+                                                                                                            border-top: 4px solid {COR_DOURADO};
+                                                                                                                }}
+                                                                                                                    div[data-testid="stMetricValue"] {{
+                                                                                                                            color: {COR_VERMELHO} !important;
+                                                                                                                                }}
+                                                                                                                                
+                                                                                                                                    /* Botões primários */
+                                                                                                                                        .stButton > button {{
+                                                                                                                                                background: {COR_VERMELHO};
+                                                                                                                                                        color: {COR_BRANCO};
+                                                                                                                                                                border: none;
+                                                                                                                                                                        border-radius: 6px;
+                                                                                                                                                                                font-weight: 600;
+                                                                                                                                                                                    }}
+                                                                                                                                                                                        .stButton > button:hover {{
+                                                                                                                                                                                                background: {COR_DESTAQUE};
+                                                                                                                                                                                                        color: {COR_BRANCO};
+                                                                                                                                                                                                            }}
+                                                                                                                                                                                                            
+                                                                                                                                                                                                                /* Tabs */
+                                                                                                                                                                                                                    .stTabs [data-baseweb="tab"] {{
+                                                                                                                                                                                                                            color: {COR_VERMELHO};
+                                                                                                                                                                                                                                    font-weight: 600;
+                                                                                                                                                                                                                                        }}
+                                                                                                                                                                                                                                            .stTabs [aria-selected="true"] {{
+                                                                                                                                                                                                                                                    border-bottom: 3px solid {COR_DOURADO} !important;
+                                                                                                                                                                                                                                                        }}
+                                                                                                                                                                                                                                                        </style>
+                                                                                                                                                                                                                                                        """, unsafe_allow_html=True)
+
+# ── Conexão Supabase ───────────────────────────────────────────────────────────
 @st.cache_resource
 def get_supabase() -> Client:
-    url  = st.secrets["SUPABASE_URL"]
-    key  = st.secrets["SUPABASE_KEY"]
+        url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
 
 supabase = get_supabase()
 
-# ── Funções de dados ─────────────────────────────────────────────────────────
+# ── Funções de dados ───────────────────────────────────────────────────────────
 def load_data():
-    try:
-        res = supabase.table("correspondentes").select("*").order("data", desc=True).execute()
-        return res.data or []
-    except Exception as e:
+        try:
+                    res = supabase.table("correspondentes").select("*").order("data", desc=True).execute()
+                    return res.data or []
+except Exception as e:
         st.error(f"Erro ao carregar dados: {e}")
         return []
 
-def insert_data(reg: dict):
-    try:
-        supabase.table("correspondentes").insert(reg).execute()
-        return True
-    except Exception as e:
+def insert_data(record: dict):
+        try:
+                    supabase.table("correspondentes").insert(record).execute()
+                    return True
+except Exception as e:
         st.error(f"Erro ao inserir: {e}")
         return False
 
-def update_data(id_: int, reg: dict):
-    try:
-        supabase.table("correspondentes").update(reg).eq("id", id_).execute()
-        return True
-    except Exception as e:
+def update_data(id_: int, record: dict):
+        try:
+                    supabase.table("correspondentes").update(record).eq("id", id_).execute()
+                    return True
+except Exception as e:
         st.error(f"Erro ao atualizar: {e}")
         return False
 
 def delete_data(id_: int):
-    try:
-        supabase.table("correspondentes").delete().eq("id", id_).execute()
-        return True
-    except Exception as e:
+        try:
+                    supabase.table("correspondentes").delete().eq("id", id_).execute()
+                    return True
+except Exception as e:
         st.error(f"Erro ao excluir: {e}")
         return False
 
-# ── Constantes ───────────────────────────────────────────────────────────────
-ESTADOS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
-           "MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]
-TIPOS      = ["Conciliação","Instrução","Inicial","UNA"]
+# ── Constantes ─────────────────────────────────────────────────────────────────
+ESTADOS    = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
+                             "MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]
+TIPOS      = ["","Conciliação","Instrução","Inicial","UNA"]
 STATUS_PAG = ["Pendente","Pago","Parcial"]
 
-# ── Header ───────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style='background:linear-gradient(135deg,#1a237e,#283593);color:white;
-padding:18px 24px;border-radius:10px;margin-bottom:24px;text-align:center'>
-<h1 style='margin:0;font-size:1.8rem'>⚖️ Painel – Advogados Correspondentes</h1>
-</div>
-""", unsafe_allow_html=True)
+# ── Header com Logo ────────────────────────────────────────────────────────────
+logo_b64 = get_logo_b64()
+logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:70px;vertical-align:middle;margin-right:16px;">' if logo_b64 else '⚖️'
 
-# ── Navegação ────────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div style='background:linear-gradient(135deg,{COR_VERMELHO},{COR_DESTAQUE});
+            color:{COR_BRANCO};padding:18px 24px;border-radius:10px;
+                        margin-bottom:24px;text-align:center;
+                                    border-bottom:4px solid {COR_DOURADO};'>
+                                      <div style='display:flex;align-items:center;justify-content:center;gap:16px;'>
+                                          {logo_html}
+                                              <div>
+                                                    <h1 style='margin:0;font-size:1.8rem;font-weight:700;'>Painel – Advogados Correspondentes</h1>
+                                                          <p style='margin:4px 0 0;font-size:0.9rem;opacity:0.85;'>Imaculada Gordiano Sociedade de Advogados</p>
+                                                              </div>
+                                                                </div>
+                                                                </div>
+                                                                """, unsafe_allow_html=True)
+
+# ── Navegação ──────────────────────────────────────────────────────────────────
+st.sidebar.markdown(f"""
+<div style='text-align:center;padding:12px 0 8px;'>
+  {f'<img src="data:image/png;base64,{logo_b64}" style="width:120px;border-radius:8px;">' if logo_b64 else ''}
+    <p style='font-size:0.75rem;margin:6px 0 0;opacity:0.8;'>Imaculada Gordiano</p>
+    </div>
+    """, unsafe_allow_html=True)
 st.sidebar.title("📌 Navegação")
-pagina = st.sidebar.radio("", ["📊 Dashboard","➕ Cadastro","📋 Registros","✏️ Editar/Excluir"])
+pagina = st.sidebar.radio("", ["📊 Dashboard","➕ Cadastro","📦 Importar Planilha","📋 Registros","✏️ Editar/Excluir"])
 st.sidebar.markdown("---")
 
 registros = load_data()
 st.sidebar.info(f"**Total de registros:** {len(registros)}")
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 # DASHBOARD
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 if pagina == "📊 Dashboard":
-    st.subheader("📊 Visão Geral")
+        st.subheader("📊 Visão Geral")
     df = pd.DataFrame(registros) if registros else pd.DataFrame()
-    hoje  = date.today()
-    prox30 = hoje + timedelta(days=30)
-    total  = len(registros)
+    hoje    = date.today()
+    prox30  = hoje + timedelta(days=30)
+    total   = len(registros)
 
     if not df.empty and "data" in df.columns:
-        df["data_dt"] = pd.to_datetime(df["data"], errors="coerce")
-        futuras = df[(df["data_dt"].dt.date >= hoje) & (df["data_dt"].dt.date <= prox30)]
-        n_fut   = len(futuras)
-        n_conc  = len(df[df["tipo"]=="Conciliação"])  if "tipo"      in df.columns else 0
-        n_instr = len(df[df["tipo"]=="Instrução"])    if "tipo"      in df.columns else 0
-        n_pago  = len(df[df["pagamento"]=="Pago"])    if "pagamento" in df.columns else 0
-    else:
+                df["data_dt"] = pd.to_datetime(df["data"], errors="coerce")
+                futuras  = df[(df["data_dt"].dt.date >= hoje) & (df["data_dt"].dt.date <= prox30)]
+                n_fut    = len(futuras)
+                n_conc   = len(df[df["tipo"]=="Conciliação"])   if "tipo"      in df.columns else 0
+                n_instr  = len(df[df["tipo"]=="Instrução"])     if "tipo"      in df.columns else 0
+                n_pago   = len(df[df["pagamento"]=="Pago"])     if "pagamento" in df.columns else 0
+else:
         n_fut = n_conc = n_instr = n_pago = 0
 
     c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("👥 Total",           total)
-    c2.metric("📅 Próx. 30 dias",   n_fut)
-    c3.metric("🤝 Conciliações",    n_conc)
-    c4.metric("📖 Instruções",      n_instr)
-    c5.metric("💰 Pagos",           n_pago)
+    c1.metric("👥 Total",         total)
+    c2.metric("📅 Próx. 30 dias", n_fut)
+    c3.metric("🤝 Conciliações",  n_conc)
+    c4.metric("📖 Instruções",    n_instr)
+    c5.metric("💰 Pagos",         n_pago)
 
     if not df.empty and "tipo" in df.columns:
-        st.markdown("---")
-        col1,col2 = st.columns(2)
-        with col1:
-            fig = px.pie(df, names="tipo", title="Audiências por Tipo",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_layout(height=320); st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            if "estado" in df.columns:
-                cnt = df["estado"].value_counts().reset_index(); cnt.columns=["Estado","Qtd"]
-                fig2 = px.bar(cnt,x="Estado",y="Qtd",title="Por Estado",color="Qtd",color_continuous_scale="Blues")
-                fig2.update_layout(height=320); st.plotly_chart(fig2, use_container_width=True)
+                st.markdown("---")
+                col1,col2 = st.columns(2)
+                with col1:
+                                fig = px.pie(df, names="tipo", title="Audiências por Tipo",
+                                                                      color_discrete_sequence=[COR_VERMELHO, COR_DOURADO, "#c0392b", "#e67e22"])
+                                fig.update_layout(height=320)
+                                st.plotly_chart(fig, use_container_width=True)
+                            with col2:
+                    if "estado" in df.columns:
+                                        fig2 = px.bar(df["estado"].value_counts().reset_index(),
+                                                                                    x="estado", y="count", title="Audiências por Estado",
+                                                                                    color_discrete_sequence=[COR_DOURADO])
+                                        fig2.update_layout(height=320)
+                                        st.plotly_chart(fig2, use_container_width=True)
+
+    if not df.empty and "pagamento" in df.columns:
+                st.markdown("---")
         col3,col4 = st.columns(2)
         with col3:
-            if "cliente" in df.columns:
-                cnt2 = df["cliente"].value_counts().head(10).reset_index(); cnt2.columns=["Cliente","Qtd"]
-                fig3 = px.bar(cnt2,x="Qtd",y="Cliente",orientation="h",title="Top 10 Clientes",color="Qtd",color_continuous_scale="Greens")
-                fig3.update_layout(height=320); st.plotly_chart(fig3, use_container_width=True)
-        with col4:
-            if "data_dt" in df.columns:
-                df["mes"] = df["data_dt"].dt.to_period("M").astype(str)
-                cnt3 = df["mes"].value_counts().sort_index().reset_index(); cnt3.columns=["Mês","Qtd"]
-                fig4 = px.line(cnt3,x="Mês",y="Qtd",title="Audiências por Mês",markers=True)
-                fig4.update_layout(height=320); st.plotly_chart(fig4, use_container_width=True)
+                        fig3 = px.pie(df, names="pagamento", title="Status de Pagamento",
+                                                                color_discrete_sequence=[COR_VERMELHO, COR_DOURADO, "#888"])
+                        fig3.update_layout(height=320)
+                        st.plotly_chart(fig3, use_container_width=True)
+                    with col4:
+                                    if "data_dt" in df.columns:
+                                                        df_sorted = df.sort_values("data_dt")
+                                                        fig4 = px.histogram(df_sorted, x="data_dt", title="Audiências por Mês",
+                                                                            color_discrete_sequence=[COR_VERMELHO])
+                                                        fig4.update_layout(height=320)
+                                                        st.plotly_chart(fig4, use_container_width=True)
 
-        st.markdown("### 📅 Próximas Audiências (30 dias)")
-        if n_fut > 0:
-            cols_s = [c for c in ["nome","cliente","cidade","estado","tipo","data"] if c in futuras.columns]
-            st.dataframe(futuras[cols_s].sort_values("data"), use_container_width=True, hide_index=True)
-        else:
-            st.info("Nenhuma audiência nos próximos 30 dias.")
-    else:
-        st.info("Nenhum dado. Vá para ➕ Cadastro para adicionar o primeiro registro.")
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CADASTRO
-# ═══════════════════════════════════════════════════════════════════════════
+                        # ═══════════════════════════════════════════════════════════════════════════════
+                        # CADASTRO
+# ═══════════════════════════════════════════════════════════════════════════════
 elif pagina == "➕ Cadastro":
-    st.subheader("➕ Novo Correspondente / Audiência")
-    with st.form("form_cad", clear_on_submit=True):
-        st.markdown("**Dados do Advogado**")
-        a1,a2,a3 = st.columns(3)
-        nome     = a1.text_input("Nome Completo *")
-        telefone = a2.text_input("Telefone *")
-        oab      = a3.text_input("OAB *")
-        b1,b2    = st.columns([3,1])
-        cidade   = b1.text_input("Cidade *")
-        estado   = b2.selectbox("Estado *", [""]+ESTADOS)
-        st.markdown("**Audiência**")
-        d1,d2,d3 = st.columns(3)
-        cliente  = d1.text_input("Cliente *")
-        data_aud = d2.date_input("Data *", value=date.today())
-        tipo     = d3.selectbox("Tipo *", [""]+TIPOS)
-        st.markdown("**Detalhes**")
-        e1,e2,e3 = st.columns(3)
-        forum    = e1.text_input("Fórum")
-        processo = e2.text_input("Nº Processo")
-        area     = e3.text_input("Área Jurídica")
-        f1,f2    = st.columns(2)
-        honorarios = f1.number_input("Honorários (R$)", min_value=0.0, step=50.0, format="%.2f")
-        pagamento  = f2.selectbox("Status Pagamento", [""]+STATUS_PAG)
-        obs = st.text_area("Observações")
-        st.markdown("**Campos Personalizados**")
-        n_extras = st.number_input("Qtd. campos extras:", min_value=0, max_value=10, value=0, step=1)
-        extras = []
-        for i in range(int(n_extras)):
-            g1,g2 = st.columns(2)
-            k = g1.text_input(f"Campo {i+1}", key=f"ek{i}")
-            v = g2.text_input(f"Valor {i+1}",  key=f"ev{i}")
-            if k: extras.append({"chave":k,"valor":v})
-        ok = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+    st.subheader("➕ Novo Cadastro")
+    with st.form("form_cadastro", clear_on_submit=True):
+                c1,c2,c3 = st.columns(3)
+        nome     = c1.text_input("Nome *")
+        oab      = c2.text_input("OAB *")
+        telefone = c3.text_input("Telefone *")
 
-    if ok:
-        erros = [f for f,v in [("Nome",nome),("Telefone",telefone),("OAB",oab),
-                                ("Cidade",cidade),("Estado",estado),("Cliente",cliente),("Tipo",tipo)] if not v]
+        c4,c5,c6 = st.columns(3)
+        cidade   = c4.text_input("Cidade *")
+        estado   = c5.selectbox("Estado *", ESTADOS)
+        empresa  = c6.text_input("Empresa")
+
+        c7,c8,c9 = st.columns(3)
+        cliente  = c7.text_input("Cliente *")
+        data_aud = c8.date_input("Data da Audiência *", value=date.today())
+        tipo     = c9.selectbox("Tipo", TIPOS)
+
+        c10,c11 = st.columns(2)
+        pagamento = c10.selectbox("Status Pagamento", STATUS_PAG)
+        obs       = c11.text_area("Observações", height=80)
+
+        submitted = st.form_submit_button("💾 Salvar", use_container_width=True)
+
+    if submitted:
+                erros = []
+        if not nome:     erros.append("Nome")
+                    if not oab:      erros.append("OAB")
+                                if not telefone: erros.append("Telefone")
+                                            if not cidade:   erros.append("Cidade")
+                                                        if not cliente:  erros.append("Cliente")
+
         if erros:
-            st.error(f"Campos obrigatórios: {', '.join(erros)}")
-        else:
-            reg = {"nome":nome,"telefone":telefone,"oab":oab,"cidade":cidade,
-                   "estado":estado,"cliente":cliente,"data":str(data_aud),"tipo":tipo,
-                   "forum":forum,"processo":processo,"area":area,
-                   "honorarios":float(honorarios),"pagamento":pagamento,
-                   "obs":obs,"extras":extras,"criado_em":datetime.now().isoformat()}
-            if insert_data(reg):
-                st.success("✅ Salvo com sucesso!")
-                st.balloons()
-                st.rerun()
+                        st.error(f"Preencha os campos obrigatórios: {', '.join(erros)}")
+else:
+            record = {
+                                "nome":      nome,
+                                "oab":       oab,
+                                "telefone":  telefone,
+                                "cidade":    cidade,
+                                "estado":    estado,
+                                "empresa":   empresa if empresa else None,
+                                "cliente":   cliente,
+                                "data":      str(data_aud),
+                                "tipo":      tipo if tipo else None,
+                                "pagamento": pagamento,
+                                "obs":       obs if obs else None,
+            }
+            if insert_data(record):
+                                st.success("✅ Registro salvo com sucesso!")
+                                st.cache_data.clear()
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPORTAR PLANILHA
+# ═══════════════════════════════════════════════════════════════════════════════
+elif pagina == "📦 Importar Planilha":
+    st.subheader("📦 Importação em Lote – Planilha Excel")
+
+    st.markdown(f"""
+        <div style='background:{COR_BRANCO};border-left:5px solid {COR_DOURADO};
+                        padding:16px;border-radius:6px;margin-bottom:16px;'>
+                              <strong>📋 Formato esperado da planilha Excel (.xlsx)</strong><br><br>
+                                    A planilha deve conter as colunas na ordem abaixo (cabeçalho na 1ª linha):
+                                          <ol style='margin-top:8px;'>
+                                                  <li><code>nome</code> – Nome do advogado <strong>(obrigatório)</strong></li>
+                                                          <li><code>oab</code> – Número da OAB <strong>(obrigatório)</strong></li>
+                                                                  <li><code>telefone</code> – Telefone <strong>(obrigatório)</strong></li>
+                                                                          <li><code>cidade</code> – Cidade <strong>(obrigatório)</strong></li>
+                                                                                  <li><code>estado</code> – Sigla do estado (ex: SP, RJ) <strong>(obrigatório)</strong></li>
+                                                                                          <li><code>empresa</code> – Nome da empresa (opcional)</li>
+                                                                                                  <li><code>cliente</code> – Nome do cliente <strong>(obrigatório)</strong></li>
+                                                                                                          <li><code>data</code> – Data da audiência no formato AAAA-MM-DD <strong>(obrigatório)</strong></li>
+                                                                                                                  <li><code>tipo</code> – Tipo da audiência: Conciliação, Instrução, Inicial ou UNA (opcional)</li>
+                                                                                                                          <li><code>pagamento</code> – Status: Pendente, Pago ou Parcial (opcional, padrão: Pendente)</li>
+                                                                                                                                  <li><code>obs</code> – Observações (opcional)</li>
+                                                                                                                                        </ol>
+                                                                                                                                            </div>
+                                                                                                                                                """, unsafe_allow_html=True)
+
+    # Download modelo
+    modelo = pd.DataFrame(columns=["nome","oab","telefone","cidade","estado",
+                                                                       "empresa","cliente","data","tipo","pagamento","obs"])
+    modelo.loc[0] = ["Maria Silva","SP12345","11999990000","São Paulo","SP",
+                                          "Escritório ABC","Cliente Exemplo","2026-06-15","Conciliação","Pendente",""]
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                modelo.to_excel(writer, index=False, sheet_name="Correspondentes")
+    buf.seek(0)
+    st.download_button("📥 Baixar Planilha Modelo", buf,
+                                              file_name="modelo_correspondentes.xlsx",
+                                              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    st.markdown("---")
+    arquivo = st.file_uploader("📂 Selecione a planilha Excel", type=["xlsx","xls"])
+
+    if arquivo:
+                try:
+                                df_import = pd.read_excel(arquivo, dtype=str)
+                                df_import.columns = [c.strip().lower() for c in df_import.columns]
+
+            colunas_obrigatorias = ["nome","oab","telefone","cidade","estado","cliente","data"]
+            faltando = [c for c in colunas_obrigatorias if c not in df_import.columns]
+            if faltando:
+                                st.error(f"❌ Colunas obrigatórias faltando: {', '.join(faltando)}")
+else:
+                df_import = df_import.fillna("")
+                st.write(f"**{len(df_import)} registros encontrados na planilha:**")
+                st.dataframe(df_import, use_container_width=True)
+
+                if st.button("✅ Confirmar Importação", use_container_width=True):
+                                        erros_import = []
+                                        sucessos    = 0
+                                        for i, row in df_import.iterrows():
+                                                                    if not row.get("nome") or not row.get("oab") or not row.get("cliente"):
+                                                                                                    erros_import.append(f"Linha {i+2}: campos obrigatórios vazios")
+                                                                                                    continue
+                                                                                                record = {
+                                                                        "nome":      str(row.get("nome","")).strip(),
+                                                                        "oab":       str(row.get("oab","")).strip(),
+                                                                        "telefone":  str(row.get("telefone","")).strip(),
+                                                                        "cidade":    str(row.get("cidade","")).strip(),
+                                                                        "estado":    str(row.get("estado","")).strip(),
+                                                                        "empresa":   str(row.get("empresa","")).strip() or None,
+                                                                        "cliente":   str(row.get("cliente","")).strip(),
+                                                                        "data":      str(row.get("data","")).strip(),
+                                                                        "tipo":      str(row.get("tipo","")).strip() or None,
+                                                                        "pagamento": str(row.get("pagamento","Pendente")).strip() or "Pendente",
+                                                                        "obs":       str(row.get("obs","")).strip() or None,
+                                                                    }
+                                                                    if insert_data(record):
+                                                                                                    sucessos += 1
+                                            else:
+                            erros_import.append(f"Linha {i+2}: erro ao inserir")
+
+                    st.cache_data.clear()
+                    st.success(f"✅ {sucessos} registros importados com sucesso!")
+                    if erros_import:
+                                                st.warning("⚠️ Erros encontrados:\n" + "\n".join(erros_import))
+except Exception as e:
+            st.error(f"Erro ao ler planilha: {e}")
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # REGISTROS
-# ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
 elif pagina == "📋 Registros":
-    st.subheader("📋 Consultar Registros")
-    if not registros:
-        st.info("Nenhum registro. Cadastre o primeiro!")
-    else:
-        df = pd.DataFrame(registros)
-        st.markdown("**🔍 Filtros**")
-        h1,h2,h3,h4,h5 = st.columns(5)
-        fn = h1.text_input("Nome")
-        fc = h2.text_input("Cliente")
-        fe = h3.selectbox("Estado", ["Todos"]+ESTADOS)
-        ft = h4.selectbox("Tipo",   ["Todos"]+TIPOS)
-        fo = h5.text_input("OAB")
-        mask = pd.Series([True]*len(df))
-        if fn: mask &= df["nome"].str.contains(fn,case=False,na=False)
-        if fc: mask &= df["cliente"].str.contains(fc,case=False,na=False)
-        if fe != "Todos": mask &= df["estado"]==fe
-        if ft != "Todos": mask &= df["tipo"]==ft
-        if fo: mask &= df["oab"].str.contains(fo,case=False,na=False)
-        df_f = df[mask].copy()
-        st.markdown(f"**{len(df_f)} de {len(df)} registros**")
-        cols_s = [c for c in ["nome","oab","telefone","cidade","estado","cliente","data","tipo","pagamento"] if c in df_f.columns]
-        st.dataframe(df_f[cols_s].sort_values("data",ascending=False), use_container_width=True, hide_index=True)
-        csv = df_f.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-        st.download_button("📥 Exportar CSV", data=csv,
-                           file_name=f"correspondentes_{date.today()}.csv", mime="text/csv", type="primary")
-
-# ═══════════════════════════════════════════════════════════════════════════
-# EDITAR / EXCLUIR
-# ═══════════════════════════════════════════════════════════════════════════
-elif pagina == "✏️ Editar/Excluir":
-    st.subheader("✏️ Editar ou Excluir Registro")
-    if not registros:
-        st.info("Nenhum registro.")
-    else:
-        nomes = [f"{r['nome']} | {r['cliente']} | {r['data']}" for r in registros]
-        sel   = st.selectbox("Registro:", nomes)
-        idx   = nomes.index(sel)
-        r     = registros[idx]
-
-        if st.button("🗑️ Excluir este registro", type="secondary"):
-            if st.session_state.get("conf_del") == r["id"]:
-                if delete_data(r["id"]):
-                    st.success("Excluído!")
-                    st.session_state.conf_del = None
-                    st.rerun()
-            else:
-                st.session_state.conf_del = r["id"]
-                st.warning("Clique novamente para confirmar a exclusão.")
-
-        with st.form("form_edit"):
-            i1,i2,i3 = st.columns(3)
-            nome     = i1.text_input("Nome *",     value=r.get("nome",""))
-            telefone = i2.text_input("Telefone *", value=r.get("telefone",""))
-            oab      = i3.text_input("OAB *",      value=r.get("oab",""))
-            j1,j2    = st.columns([3,1])
-            cidade   = j1.text_input("Cidade *",   value=r.get("cidade",""))
-            est_i    = ESTADOS.index(r["estado"]) if r.get("estado") in ESTADOS else 0
-            estado   = j2.selectbox("Estado *", ESTADOS, index=est_i)
-            k1,k2,k3 = st.columns(3)
-            cliente  = k1.text_input("Cliente *",  value=r.get("cliente",""))
-            dv = datetime.strptime(r["data"],"%Y-%m-%d").date() if r.get("data") else date.today()
-            data_aud = k2.date_input("Data *", value=dv)
-            tip_i = TIPOS.index(r["tipo"]) if r.get("tipo") in TIPOS else 0
-            tipo  = k3.selectbox("Tipo *", TIPOS, index=tip_i)
-            l1,l2,l3 = st.columns(3)
-            forum    = l1.text_input("Fórum",    value=r.get("forum",""))
-            processo = l2.text_input("Processo", value=r.get("processo",""))
-            area     = l3.text_input("Área",     value=r.get("area",""))
-            m1,m2    = st.columns(2)
-            honorarios = m1.number_input("Honorários",value=float(r.get("honorarios",0) or 0),min_value=0.0,step=50.0,format="%.2f")
-            pag_i = STATUS_PAG.index(r["pagamento"]) if r.get("pagamento") in STATUS_PAG else 0
-            pagamento = m2.selectbox("Pagamento", STATUS_PAG, index=pag_i)
-            obs = st.text_area("Observações", value=r.get("obs",""))
-            if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
-                upd = {"nome":nome,"telefone":telefone,"oab":oab,"cidade":cidade,
-                       "estado":estado,"cliente":cliente,"data":str(data_aud),"tipo":tipo,
-                       "forum":forum,"processo":processo,"area":area,
-                       "honorarios":float(honorarios),"pagamento":pagamento,"obs":obs,
-                       "atualizado_em":datetime.now().isoformat()}
-                if update_data(r["id"], upd):
-                    st.success("✅ Atualizado!")
-                    st.rerun()
-import streamlit as st
-import pandas as pd
-import json
-import os
-from datetime import datetime, date, timedelta
-import plotly.express as px
-
-st.set_page_config(
-    page_title="Painel – Advogados Correspondentes",
-    page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-st.markdown("""
-<style>
-div[data-testid="stMetric"] {
-    background: white; border-radius: 10px; padding: 14px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.08); border-top: 4px solid #3949ab;
-}
-</style>
-""", unsafe_allow_html=True)
-
-DATA_FILE = "dados.json"
-
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
-
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-
-if "registros" not in st.session_state:
-    st.session_state.registros = load_data()
-
-ESTADOS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS",
-           "MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]
-TIPOS = ["Conciliação","Instrução","Inicial","UNA"]
-STATUS_PAG = ["Pendente","Pago","Parcial"]
-
-st.markdown("""
-<div style='background:linear-gradient(135deg,#1a237e,#283593);color:white;
-padding:18px 24px;border-radius:10px;margin-bottom:24px;text-align:center'>
-<h1 style='margin:0;font-size:1.8rem'>⚖️ Painel – Advogados Correspondentes</h1>
-</div>
-""", unsafe_allow_html=True)
-
-st.sidebar.title("📌 Navegação")
-pagina = st.sidebar.radio("", ["📊 Dashboard","➕ Cadastro","📋 Registros","✏️ Editar/Excluir"])
-st.sidebar.markdown("---")
-st.sidebar.info(f"**Total de registros:** {len(st.session_state.registros)}")
-
-# ── DASHBOARD ────────────────────────────────────────────────────────────────
-if pagina == "📊 Dashboard":
-    st.subheader("📊 Visão Geral")
-    registros = st.session_state.registros
+    st.subheader("📋 Lista de Registros")
     df = pd.DataFrame(registros) if registros else pd.DataFrame()
-    hoje = date.today()
-    prox30 = hoje + timedelta(days=30)
-    total = len(registros)
-    if not df.empty and "data" in df.columns:
-        df["data_dt"] = pd.to_datetime(df["data"], errors="coerce")
-        futuras = df[(df["data_dt"].dt.date >= hoje) & (df["data_dt"].dt.date <= prox30)]
-        n_fut   = len(futuras)
-        n_conc  = len(df[df["tipo"]=="Conciliação"]) if "tipo" in df.columns else 0
-        n_instr = len(df[df["tipo"]=="Instrução"])   if "tipo" in df.columns else 0
-        n_pago  = len(df[df["pagamento"]=="Pago"])   if "pagamento" in df.columns else 0
-    else:
-        n_fut = n_conc = n_instr = n_pago = 0
 
-    c1,c2,c3,c4,c5 = st.columns(5)
-    c1.metric("👥 Total",             total)
-    c2.metric("📅 Próx. 30 dias",     n_fut)
-    c3.metric("🤝 Conciliações",      n_conc)
-    c4.metric("📖 Instruções",        n_instr)
-    c5.metric("💰 Pagos",             n_pago)
+    with st.expander("🔍 Filtros", expanded=True):
+                fc1,fc2,fc3,fc4,fc5 = st.columns(5)
+        f_nome    = fc1.text_input("Nome")
+        f_cliente = fc2.text_input("Cliente")
+        f_estado  = fc3.selectbox("Estado", ["Todos"]+ESTADOS, key="f_estado")
+        f_tipo    = fc4.selectbox("Tipo",   ["Todos"]+[t for t in TIPOS if t], key="f_tipo")
+        f_oab     = fc5.text_input("OAB")
 
-    if not df.empty and "tipo" in df.columns:
-        st.markdown("---")
-        col1,col2 = st.columns(2)
-        with col1:
-            fig = px.pie(df, names="tipo", title="Audiências por Tipo",
-                         color_discrete_sequence=px.colors.qualitative.Set2)
-            fig.update_layout(height=320)
-            st.plotly_chart(fig, use_container_width=True)
-        with col2:
-            if "estado" in df.columns:
-                cnt = df["estado"].value_counts().reset_index()
-                cnt.columns = ["Estado","Qtd"]
-                fig2 = px.bar(cnt, x="Estado", y="Qtd", title="Por Estado",
-                              color="Qtd", color_continuous_scale="Blues")
-                fig2.update_layout(height=320)
-                st.plotly_chart(fig2, use_container_width=True)
+    if not df.empty:
+                if f_nome:    df = df[df["nome"].str.contains(f_nome, case=False, na=False)]
+                            if f_cliente: df = df[df["cliente"].str.contains(f_cliente, case=False, na=False)]
+                                        if f_estado != "Todos": df = df[df["estado"]==f_estado]
+                                                    if f_tipo   != "Todos": df = df[df["tipo"]==f_tipo]
+                                                                if f_oab:     df = df[df["oab"].str.contains(f_oab, case=False, na=False)]
 
-        col3,col4 = st.columns(2)
-        with col3:
-            if "cliente" in df.columns:
-                cnt2 = df["cliente"].value_counts().head(10).reset_index()
-                cnt2.columns = ["Cliente","Qtd"]
-                fig3 = px.bar(cnt2, x="Qtd", y="Cliente", orientation="h",
-                              title="Top 10 Clientes", color="Qtd",
-                              color_continuous_scale="Greens")
-                fig3.update_layout(height=320)
-                st.plotly_chart(fig3, use_container_width=True)
-        with col4:
-            if "data_dt" in df.columns:
-                df["mes"] = df["data_dt"].dt.to_period("M").astype(str)
-                cnt3 = df["mes"].value_counts().sort_index().reset_index()
-                cnt3.columns = ["Mês","Qtd"]
-                fig4 = px.line(cnt3, x="Mês", y="Qtd", title="Audiências por Mês", markers=True)
-                fig4.update_layout(height=320)
-                st.plotly_chart(fig4, use_container_width=True)
+        st.write(f"**{len(df)} de {len(registros)} registros**")
+        colunas_show = [c for c in ["nome","oab","telefone","cidade","estado","empresa",
+                                                                         "cliente","data","tipo","pagamento","obs"] if c in df.columns]
+        st.dataframe(df[colunas_show].reset_index(drop=True), use_container_width=True)
 
-        st.markdown("### 📅 Próximas Audiências (30 dias)")
-        if n_fut > 0:
-            cols_s = [c for c in ["nome","cliente","cidade","estado","tipo","data"] if c in futuras.columns]
-            st.dataframe(futuras[cols_s].sort_values("data"), use_container_width=True, hide_index=True)
-        else:
-            st.info("Nenhuma audiência nos próximos 30 dias.")
-    else:
-        st.info("Nenhum dado cadastrado. Vá para ➕ Cadastro.")
+        csv = df.to_csv(index=False, sep=";", encoding="utf-8-sig").encode("utf-8-sig")
+        st.download_button("📤 Exportar CSV", csv, "correspondentes.csv", "text/csv")
+else:
+        st.info("Nenhum registro encontrado.")
 
-# ── CADASTRO ─────────────────────────────────────────────────────────────────
-elif pagina == "➕ Cadastro":
-    st.subheader("➕ Novo Correspondente / Audiência")
-    with st.form("form_cad", clear_on_submit=True):
-        st.markdown("**Dados do Advogado**")
-        a1,a2,a3 = st.columns(3)
-        nome     = a1.text_input("Nome Completo *")
-        telefone = a2.text_input("Telefone *")
-        oab      = a3.text_input("OAB *")
-
-        st.markdown("**Localização**")
-        b1,b2 = st.columns([3,1])
-        cidade = b1.text_input("Cidade *")
-        estado = b2.selectbox("Estado *", [""]+ESTADOS)
-
-        st.markdown("**Audiência**")
-        d1,d2,d3 = st.columns(3)
-        cliente  = d1.text_input("Cliente *")
-        data_aud = d2.date_input("Data *", value=date.today())
-        tipo     = d3.selectbox("Tipo *", [""]+TIPOS)
-
-        st.markdown("**Detalhes**")
-        e1,e2,e3 = st.columns(3)
-        forum    = e1.text_input("Fórum")
-        processo = e2.text_input("Nº Processo")
-        area     = e3.text_input("Área Jurídica")
-
-        f1,f2 = st.columns(2)
-        honorarios = f1.number_input("Honorários (R$)", min_value=0.0, step=50.0, format="%.2f")
-        pagamento  = f2.selectbox("Status Pagamento", [""]+STATUS_PAG)
-
-        obs = st.text_area("Observações")
-
-        st.markdown("**Campos Personalizados**")
-        n_extras = st.number_input("Qtd. campos extras:", min_value=0, max_value=10, value=0, step=1)
-        extras = []
-        for i in range(int(n_extras)):
-            g1,g2 = st.columns(2)
-            k = g1.text_input(f"Campo {i+1}", key=f"ek{i}")
-            v = g2.text_input(f"Valor {i+1}",  key=f"ev{i}")
-            if k: extras.append({"chave":k,"valor":v})
-
-        ok = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
-
-    if ok:
-        erros = [f for f,v in [("Nome",nome),("Telefone",telefone),("OAB",oab),
-                                ("Cidade",cidade),("Estado",estado),("Cliente",cliente),("Tipo",tipo)] if not v]
-        if erros:
-            st.error(f"Campos obrigatórios: {', '.join(erros)}")
-        else:
-            reg = {"id":int(datetime.now().timestamp()*1000),"nome":nome,"telefone":telefone,
-                   "oab":oab,"cidade":cidade,"estado":estado,"cliente":cliente,"data":str(data_aud),
-                   "tipo":tipo,"forum":forum,"processo":processo,"area":area,
-                   "honorarios":honorarios,"pagamento":pagamento,"obs":obs,"extras":extras,
-                   "criado_em":datetime.now().isoformat()}
-            st.session_state.registros.append(reg)
-            save_data(st.session_state.registros)
-            st.success("✅ Salvo com sucesso!")
-            st.balloons()
-
-# ── REGISTROS ────────────────────────────────────────────────────────────────
-elif pagina == "📋 Registros":
-    st.subheader("📋 Consultar Registros")
-    registros = st.session_state.registros
-    if not registros:
-        st.info("Nenhum registro. Cadastre o primeiro!")
-    else:
-        df = pd.DataFrame(registros)
-        st.markdown("**🔍 Filtros**")
-        h1,h2,h3,h4,h5 = st.columns(5)
-        fn = h1.text_input("Nome")
-        fc = h2.text_input("Cliente")
-        fe = h3.selectbox("Estado", ["Todos"]+ESTADOS)
-        ft = h4.selectbox("Tipo",   ["Todos"]+TIPOS)
-        fo = h5.text_input("OAB")
-
-        mask = pd.Series([True]*len(df))
-        if fn: mask &= df["nome"].str.contains(fn, case=False, na=False)
-        if fc: mask &= df["cliente"].str.contains(fc, case=False, na=False)
-        if fe != "Todos": mask &= df["estado"]==fe
-        if ft != "Todos": mask &= df["tipo"]==ft
-        if fo: mask &= df["oab"].str.contains(fo, case=False, na=False)
-
-        df_f = df[mask].copy()
-        st.markdown(f"**{len(df_f)} de {len(df)} registros**")
-        cols_s = [c for c in ["nome","oab","telefone","cidade","estado","cliente","data","tipo","pagamento"] if c in df_f.columns]
-        st.dataframe(df_f[cols_s].sort_values("data",ascending=False), use_container_width=True, hide_index=True)
-        csv = df_f.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-        st.download_button("📥 Exportar CSV", data=csv,
-                           file_name=f"correspondentes_{date.today()}.csv", mime="text/csv", type="primary")
-
-# ── EDITAR / EXCLUIR ─────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# EDITAR / EXCLUIR
+# ═══════════════════════════════════════════════════════════════════════════════
 elif pagina == "✏️ Editar/Excluir":
-    st.subheader("✏️ Editar ou Excluir Registro")
-    registros = st.session_state.registros
+    st.subheader("✏️ Editar / Excluir Registros")
+
     if not registros:
-        st.info("Nenhum registro.")
-    else:
-        nomes = [f"{r['nome']} | {r['cliente']} | {r['data']}" for r in registros]
-        sel = st.selectbox("Registro:", nomes)
-        idx = nomes.index(sel)
-        r   = registros[idx]
+                st.info("Nenhum registro disponível.")
+else:
+        df_ed = pd.DataFrame(registros)
 
-        if st.button("🗑️ Excluir este registro", type="secondary"):
-            if st.session_state.get("conf_del")==idx:
-                st.session_state.registros.pop(idx)
-                save_data(st.session_state.registros)
-                st.success("Excluído!")
-                st.session_state.conf_del=None
-                st.rerun()
-            else:
-                st.session_state.conf_del=idx
-                st.warning("Clique novamente para confirmar.")
+        # ── Busca rápida ───────────────────────────────────────────────────────
+        busca = st.text_input("🔎 Buscar por nome ou OAB")
+        if busca:
+                        mask = (df_ed["nome"].str.contains(busca, case=False, na=False) |
+                                                    df_ed["oab"].str.contains(busca, case=False, na=False))
+            df_ed = df_ed[mask]
 
-        with st.form("form_edit"):
-            i1,i2,i3 = st.columns(3)
-            nome     = i1.text_input("Nome *",     value=r.get("nome",""))
-            telefone = i2.text_input("Telefone *", value=r.get("telefone",""))
-            oab      = i3.text_input("OAB *",      value=r.get("oab",""))
-            j1,j2   = st.columns([3,1])
-            cidade  = j1.text_input("Cidade *",    value=r.get("cidade",""))
-            est_i   = ESTADOS.index(r["estado"]) if r.get("estado") in ESTADOS else 0
-            estado  = j2.selectbox("Estado *", ESTADOS, index=est_i)
-            k1,k2,k3 = st.columns(3)
-            cliente = k1.text_input("Cliente *",   value=r.get("cliente",""))
-            dv = datetime.strptime(r["data"],"%Y-%m-%d").date() if r.get("data") else date.today()
-            data_aud = k2.date_input("Data *", value=dv)
-            tip_i = TIPOS.index(r["tipo"]) if r.get("tipo") in TIPOS else 0
-            tipo  = k3.selectbox("Tipo *", TIPOS, index=tip_i)
-            l1,l2,l3 = st.columns(3)
-            forum    = l1.text_input("Fórum",      value=r.get("forum",""))
-            processo = l2.text_input("Processo",   value=r.get("processo",""))
-            area     = l3.text_input("Área",       value=r.get("area",""))
-            m1,m2   = st.columns(2)
-            honorarios = m1.number_input("Honorários", value=float(r.get("honorarios",0) or 0), min_value=0.0, step=50.0, format="%.2f")
-            pag_i = STATUS_PAG.index(r["pagamento"]) if r.get("pagamento") in STATUS_PAG else 0
-            pagamento = m2.selectbox("Pagamento", STATUS_PAG, index=pag_i)
-            obs = st.text_area("Observações", value=r.get("obs",""))
-            if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
-                st.session_state.registros[idx].update({
-                    "nome":nome,"telefone":telefone,"oab":oab,"cidade":cidade,"estado":estado,
-                    "cliente":cliente,"data":str(data_aud),"tipo":tipo,"forum":forum,
-                    "processo":processo,"area":area,"honorarios":honorarios,
-                    "pagamento":pagamento,"obs":obs,"atualizado_em":datetime.now().isoformat()
-                })
-                save_data(st.session_state.registros)
-                st.success("✅ Atualizado!")
-                st.rerun()
+        if df_ed.empty:
+                        st.warning("Nenhum registro encontrado.")
+else:
+            opcoes = {f"{r['nome']} – OAB {r['oab']} (ID {r['id']})": r['id']
+                                            for _, r in df_ed.iterrows()}
+            escolha = st.selectbox("Selecione o registro", list(opcoes.keys()))
+            reg_id  = opcoes[escolha]
+            reg     = next(r for r in registros if r["id"] == reg_id)
+
+            tab_editar, tab_excluir = st.tabs(["✏️ Editar", "🗑️ Excluir"])
+
+            # ── Aba Editar ─────────────────────────────────────────────────────
+            with tab_editar:
+                                with st.form("form_editar"):
+                                                        e1,e2,e3 = st.columns(3)
+                                                        nome_e     = e1.text_input("Nome *",     value=reg.get("nome",""))
+                                                        oab_e      = e2.text_input("OAB *",      value=reg.get("oab",""))
+                                                        telefone_e = e3.text_input("Telefone *", value=reg.get("telefone",""))
+
+                    e4,e5,e6 = st.columns(3)
+                    cidade_e  = e4.text_input("Cidade *", value=reg.get("cidade",""))
+                    estado_e  = e5.selectbox("Estado *", ESTADOS,
+                                                                                           index=ESTADOS.index(reg["estado"]) if reg.get("estado") in ESTADOS else 0)
+                    empresa_e = e6.text_input("Empresa", value=reg.get("empresa","") or "")
+
+                    e7,e8,e9 = st.columns(3)
+                    cliente_e  = e7.text_input("Cliente *", value=reg.get("cliente",""))
+                    try:
+                                                data_val = datetime.strptime(reg.get("data",""), "%Y-%m-%d").date()
+                                            except:
+                        data_val = date.today()
+                    data_e     = e8.date_input("Data *", value=data_val)
+                    tipo_idx   = TIPOS.index(reg["tipo"]) if reg.get("tipo") in TIPOS else 0
+                    tipo_e     = e9.selectbox("Tipo", TIPOS, index=tipo_idx)
+
+                    e10,e11 = st.columns(2)
+                    pag_list  = STATUS_PAG
+                    pag_idx   = pag_list.index(reg["pagamento"]) if reg.get("pagamento") in pag_list else 0
+                    pagamento_e = e10.selectbox("Status Pagamento", pag_list, index=pag_idx)
+                    obs_e       = e11.text_area("Observações", value=reg.get("obs","") or "", height=80)
+
+                    salvar = st.form_submit_button("💾 Salvar Alterações", use_container_width=True)
+
+                if salvar:
+                                        erros_e = []
+                    if not nome_e:     erros_e.append("Nome")
+                                            if not oab_e:      erros_e.append("OAB")
+                                                                    if not telefone_e: erros_e.append("Telefone")
+                                                                                            if not cidade_e:   erros_e.append("Cidade")
+                                                                                                                    if not cliente_e:  erros_e.append("Cliente")
+                                                                                                                                            if erros_e:
+                                                                                                                                                                        st.error(f"Preencha os campos obrigatórios: {', '.join(erros_e)}")
+else:
+                        upd = {
+                                                        "nome":      nome_e,
+                                                        "oab":       oab_e,
+                                                        "telefone":  telefone_e,
+                                                        "cidade":    cidade_e,
+                                                        "estado":    estado_e,
+                                                        "empresa":   empresa_e if empresa_e else None,
+                                                        "cliente":   cliente_e,
+                                                        "data":      str(data_e),
+                                                        "tipo":      tipo_e if tipo_e else None,
+                                                        "pagamento": pagamento_e,
+                                                        "obs":       obs_e if obs_e else None,
+                        }
+                        if update_data(reg_id, upd):
+                                                        st.success("✅ Registro atualizado!")
+                                                        st.cache_data.clear()
+
+            # ── Aba Excluir ────────────────────────────────────────────────────
+            with tab_excluir:
+                                st.warning(f"⚠️ Você está prestes a excluir o registro de **{reg.get('nome','')}**.")
+                st.markdown("Esta ação **não pode ser desfeita**. Confirme abaixo:")
+                confirmar = st.checkbox("Sim, desejo excluir este registro")
+                if st.button("🗑️ Excluir Registro", disabled=not confirmar, type="primary"):
+                                        if delete_data(reg_id):
+                                                                    st.success("✅ Registro excluído!")
+                                                                    st.cache_data.clear()
+                                            
