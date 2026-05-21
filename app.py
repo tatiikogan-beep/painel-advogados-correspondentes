@@ -108,6 +108,16 @@ ESTADOS = ["", "AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
            "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"]
 TIPOS   = ["", "Audiencia", "Diligencia", "Pericia", "Protocolo", "Outro"]
 
+ETIQUETAS = ["", "Com contrato", "Aguardando retorno", "Fora do perfil", "Sem interesse", "Contato bloqueado"]
+ETIQUETAS_CORES = {
+    "Com contrato":      "#28a745",
+    "Aguardando retorno":"#007bff",
+    "Fora do perfil":    "#ffc107",
+    "Sem interesse":     "#fd7e14",
+    "Contato bloqueado": "#dc3545",
+    "":                  "#cccccc",
+}
+
 logo_b64 = get_logo_b64()
 if logo_b64:
     st.sidebar.markdown(
@@ -208,6 +218,10 @@ elif pagina == "Cadastro":
         data_srv  = c1.date_input("Data do Servico", value=date.today())
         pagamento = c2.text_input("Pagamento (R$)")
         obs       = st.text_area("Observacoes", height=80)
+        etiqueta = st.selectbox("Etiqueta", ETIQUETAS)
+        if etiqueta:
+            cor = ETIQUETAS_CORES.get(etiqueta, "#cccccc")
+            st.markdown(f'<div style="display:inline-block;background:{cor};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta}</div>', unsafe_allow_html=True)
         enviado   = st.form_submit_button("Salvar", use_container_width=True)
 
     if enviado:
@@ -226,6 +240,7 @@ elif pagina == "Cadastro":
                 "data":      str(data_srv),
                 "pagamento": pagamento or None,
                 "obs":       obs       or None,
+                "etiqueta": etiqueta  or None,
             }
             if insert_data(rec):
                 st.success("Correspondente cadastrado!")
@@ -266,7 +281,7 @@ elif pagina == "Importar Planilha":
             st.dataframe(df_imp.head(10), hide_index=True)
 
             COLS = ["nome","oab","telefone","cidade","estado","empresa",
-                    "cliente","tipo","data","pagamento","obs"]
+                    "cliente","tipo","data","pagamento","obs","etiqueta"]
             missing = [c for c in ["nome"] if c not in df_imp.columns]
             if missing:
                 st.error(f"Coluna obrigatoria ausente: {missing}")
@@ -358,7 +373,12 @@ elif pagina == "Editar/Excluir":
                 data_e     = e1.date_input("Data do Servico", value=data_val)
                 pagamento_e= e2.text_input("Pagamento",       value=reg.get("pagamento","") or "")
                 obs_e      = st.text_area("Observacoes",      value=reg.get("obs","") or "", height=80)
-                salvar     = st.form_submit_button("Salvar Alteracoes", use_container_width=True)
+                etiqueta_idx_e = ETIQUETAS.index(reg.get("etiqueta","")) if reg.get("etiqueta") in ETIQUETAS else 0
+                etiqueta_e   = st.selectbox("Etiqueta", ETIQUETAS, index=etiqueta_idx_e)
+                if etiqueta_e:
+                    cor_e = ETIQUETAS_CORES.get(etiqueta_e, "#cccccc")
+                    st.markdown(f'<div style="display:inline-block;background:{cor_e};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta_e}</div>', unsafe_allow_html=True)
+                salvar   = st.form_submit_button("Salvar Alteracoes", use_container_width=True)
 
             if salvar:
                 if not nome_e:
@@ -376,6 +396,7 @@ elif pagina == "Editar/Excluir":
                         "tipo":      tipo_e     if tipo_e     else None,
                         "pagamento": pagamento_e if pagamento_e else None,
                         "obs":       obs_e      if obs_e      else None,
+                "etiqueta": etiqueta_e if etiqueta_e else None,
                     }
                     if update_data(reg_id, upd):
                         st.success("Registro atualizado!")
