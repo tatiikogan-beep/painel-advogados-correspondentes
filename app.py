@@ -348,17 +348,16 @@ elif pagina == "Registros":
             else:
                 etiq_html = ""
             rows_html += f"<tr>{cells}<td>{etiq_html}</td></tr>"
-        st.markdown(f"""
-        <style>
-        .etiq-table {{width:100%;border-collapse:collapse;font-size:13px;}}
-        .etiq-table th,.etiq-table td {{padding:6px 10px;border:1px solid #e0e0e0;text-align:left;}}
-        .etiq-table th {{background:#f5f5f5;font-weight:600;}}
-        .etiq-table tr:hover {{background:#fafafa;}}
-        </style>
-        <div style="overflow-x:auto;">
-        <table class="etiq-table"><thead><tr>{header_html}</tr></thead><tbody>{rows_html}</tbody></table>
-        </div>
-        """, unsafe_allow_html=True)
+        table_html = (
+            '<style>.etiq-table{width:100%;border-collapse:collapse;font-size:13px}'
+            '.etiq-table th,.etiq-table td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left}'
+            '.etiq-table th{background:#f5f5f5;font-weight:600}'
+            '.etiq-table tr:hover{background:#fafafa}</style>'
+            f'<div style="overflow-x:auto;"><table class="etiq-table">'
+            f'<thead><tr>{header_html}</tr></thead>'
+            f'<tbody>{rows_html}</tbody></table></div>'
+        )
+        st.markdown(table_html, unsafe_allow_html=True)
 
         buf = io.BytesIO()
         dff.to_csv(buf, index=False)
