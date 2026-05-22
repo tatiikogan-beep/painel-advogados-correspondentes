@@ -341,7 +341,8 @@ elif pagina == "Registros":
         rows_html = ""
         for _, row in dff.iterrows():
             cells = "".join(f"<td>{row.get(c,'')}</td>" for c in display_cols)
-            etiq = row.get("etiqueta","") or ""
+            etiq = str(row.get("etiqueta","") or "").strip()
+            etiq = "" if etiq.lower() in ("nan", "none", "null") else etiq
             cor  = ETIQUETAS_CORES.get(etiq, "#cccccc")
             if etiq:
                 etiq_html = f'<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:50%;background:{cor};display:inline-block;flex-shrink:0;"></span>{etiq}</span>'
