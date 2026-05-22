@@ -138,7 +138,7 @@ st.sidebar.markdown(f'<p style="color:{COR_DOURADO};font-size:0.75rem;text-align
 PAGINAS = ["Dashboard", "Cadastro", "Importar Planilha", "Registros", "Editar/Excluir"]
 st.sidebar.markdown('<p style="font-size:0.7rem;color:rgba(255,255,255,0.5);'
                     'margin-bottom:4px;">NAVEGACAO</p>', unsafe_allow_html=True)
-pagina = st.sidebar.radio("", PAGINAS, label_visibility="collapsed")
+pagina = st.sidebar.radio("NAVEGACAO", PAGINAS, label_visibility="collapsed")
 
 if logo_b64:
     st.markdown(
@@ -313,10 +313,11 @@ elif pagina == "Registros":
     if df.empty:
         st.info("Nenhum registro encontrado.")
     else:
-        col1, col2, col3 = st.columns(3)
-        filtro_nome   = col1.text_input("Buscar por Nome")
-        filtro_estado = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:])
-        filtro_cidade = col3.text_input("Filtrar por Cidade")
+        col1, col2, col3, col4 = st.columns(4)
+        filtro_nome     = col1.text_input("Buscar por Nome")
+        filtro_estado   = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:])
+        filtro_cidade   = col3.text_input("Filtrar por Cidade")
+        filtro_etiqueta = col4.selectbox("Filtrar por Etiqueta", [""] + [e for e in ETIQUETAS if e])
 
         dff = df.copy()
         for col in dff.columns:
@@ -329,9 +330,35 @@ elif pagina == "Registros":
             dff = dff[dff["estado"] == filtro_estado]
         if filtro_cidade:
             dff = dff[dff["cidade"].str.contains(filtro_cidade, case=False, na=False)]
+        if filtro_etiqueta:
+            dff = dff[dff["etiqueta"] == filtro_etiqueta]
 
         st.write(f"**{len(dff)} registro(s) encontrado(s)**")
-        st.dataframe(dff, hide_index=True, use_container_width=True)
+
+        # Exibir tabela com bolinha colorida da etiqueta
+        display_cols = [c for c in ["id","nome","oab","telefone","cidade","estado","empresa","cliente","tipo"] if c in dff.columns]
+        header_html = "".join(f"<th>{c}</th>" for c in display_cols) + "<th>etiqueta</th>"
+        rows_html = ""
+        for _, row in dff.iterrows():
+            cells = "".join(f"<td>{row.get(c,'')}</td>" for c in display_cols)
+            etiq = row.get("etiqueta","") or ""
+            cor  = ETIQUETAS_CORES.get(etiq, "#cccccc")
+            if etiq:
+                etiq_html = f'<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:50%;background:{cor};display:inline-block;flex-shrink:0;"></span>{etiq}</span>'
+            else:
+                etiq_html = ""
+            rows_html += f"<tr>{cells}<td>{etiq_html}</td></tr>"
+        st.markdown(f"""
+        <style>
+        .etiq-table {{width:100%;border-collapse:collapse;font-size:13px;}}
+        .etiq-table th,.etiq-table td {{padding:6px 10px;border:1px solid #e0e0e0;text-align:left;}}
+        .etiq-table th {{background:#f5f5f5;font-weight:600;}}
+        .etiq-table tr:hover {{background:#fafafa;}}
+        </style>
+        <div style="overflow-x:auto;">
+        <table class="etiq-table"><thead><tr>{header_html}</tr></thead><tbody>{rows_html}</tbody></table>
+        </div>
+        """, unsafe_allow_html=True)
 
         buf = io.BytesIO()
         dff.to_csv(buf, index=False)
@@ -396,7 +423,7 @@ elif pagina == "Editar/Excluir":
                         "tipo":      tipo_e     if tipo_e     else None,
                         "pagamento": pagamento_e if pagamento_e else None,
                         "obs":       obs_e      if obs_e      else None,
-                "etiqueta": etiqueta_e if etiqueta_e else None,
+                        "etiqueta": etiqueta_e if etiqueta_e else None,
                     }
                     if update_data(reg_id, upd):
                         st.success("Registro atualizado!")
