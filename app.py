@@ -741,14 +741,76 @@ elif pagina == "Gestão Financeira":
                 df_novo["Data"] = d_fmt
                 df_novo["Hora de Início"] = h_fmt
 
-            st.write(f"Prévia dos dados ({len(df_novo)} linha(s)):")
-            cols_prev = [c for c in COLS_PREVIA if c in df_novo.columns]
-            st.dataframe(df_novo[cols_prev].head(10) if cols_prev else df_novo.head(10),
-                         hide_index=True, use_container_width=True)
+            # ── Conferência e ajuste de inconsistências antes da importação ──
+            st.write(f"Prévia e conferência dos dados ({len(df_novo)} linha(s)):")
+            st.caption("Revise abaixo. Linhas com possíveis inconsistências estão sinalizadas. "
+                       "Você pode corrigir qualquer célula diretamente na tabela antes de importar.")
+
+            cols_conf = [c for c in COLS_PREVIA if c in df_novo.columns]
+            for extra in ("Data", "Hora de Início", "Número CNJ"):
+                if extra in df_novo.columns and extra not in cols_conf:
+                    cols_conf.append(extra)
+            if not cols_conf:
+                cols_conf = list(df_novo.columns)
+
+            df_conf = df_novo.copy()
+
+            UFS_VALIDAS = {"AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG",
+                           "PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"}
+
+            def checa_linha(row):
+                probs = []
+                dval = str(row.get("Data", "") or "").strip()
+                if not dval:
+                    probs.append("Data ausente")
+                elif pd.isna(pd.to_datetime(dval, format="%d/%m/%Y", errors="coerce")):
+                    probs.append("Data inválida")
+                vraw = row.get("Valor")
+                vtxt = str(vraw or "").strip()
+                if vtxt and pd.isna(pd.to_numeric(pd.Series([vtxt.replace(".", "").replace(",", ".")]), errors="coerce").iloc[0]):
+                    probs.append("Valor não numérico")
+                if not str(row.get("Cliente", "") or "").strip():
+                    probs.append("Cliente ausente")
+                uf = str(row.get("UF", "") or "").strip().upper()
+                if uf and uf not in UFS_VALIDAS:
+                    probs.append("UF inválida")
+                return "; ".join(probs)
+
+            df_conf["Inconsistências"] = df_conf.apply(checa_linha, axis=1)
+            n_inconsist = int((df_conf["Inconsistências"] != "").sum())
+
+            if n_inconsist:
+                st.warning(f"{n_inconsist} linha(s) com possíveis inconsistências. "
+                           "Corrija na tabela abaixo (ou importe assim mesmo, se preferir).")
+                with st.expander(f"Ver detalhes das {n_inconsist} inconsistência(s)"):
+                    st.dataframe(df_conf.loc[df_conf["Inconsistências"] != "",
+                                             [c for c in cols_conf if c in df_conf.columns] + ["Inconsistências"]],
+                                 hide_index=True, use_container_width=True)
+            else:
+                st.success("Nenhuma inconsistência detectada na conferência inicial.")
+
+            cols_editor = [c for c in cols_conf if c in df_conf.columns] + ["Inconsistências"]
+            df_edit = st.data_editor(
+                df_conf[cols_editor],
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed",
+                disabled=["Inconsistências"],
+                key="fin_editor",
+            )
+
+            df_final = df_novo.copy()
+            for c in cols_editor:
+                if c != "Inconsistências" and c in df_edit.columns:
+                    df_final[c] = df_edit[c].values
+
+            restantes = int(df_edit.apply(checa_linha, axis=1).map(lambda s: 1 if s else 0).sum())
+            if restantes:
+                st.info(f"Ainda há {restantes} linha(s) com inconsistências. Você pode corrigir ou importar assim mesmo.")
 
             if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
                 registros = []
-                for _, row in df_novo.iterrows():
+                for _, row in df_final.iterrows():
                     rec = {}
                     for rotulo, col_db in MAPA_DB.items():
                         val = row.get(rotulo)
