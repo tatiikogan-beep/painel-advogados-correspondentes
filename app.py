@@ -74,6 +74,46 @@ def load_data():
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame()
 
+@st.cache_data(ttl=60)
+def load_audiencias():
+    """Carrega audiências salvas no Supabase (mesmo modelo de load_data)."""
+    try:
+        sb = get_supabase()
+        resp = sb.table("audiencias").select("*").execute()
+        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar audiências: {e}")
+        return pd.DataFrame()
+
+def _normaliza_txt(s):
+    """minúsculas, sem acentos, espaços colapsados."""
+    import unicodedata, re
+    if s is None:
+        return ""
+    s = str(s).strip().lower()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    return s
+
+# Agrupamentos conhecidos: assinatura normalizada -> rótulo canônico exibido
+GRUPOS_CLIENTE = {
+    "imc saste": "IMC Saste Construções, Serviços e Comércio Ltda.",
+    "gpm": "GPM - Pague Menos",
+    "pague menos": "GPM - Pague Menos",
+}
+
+def cliente_canonico(nome):
+    """Reduz variações de grafia a um rótulo canônico (correspondência parcial)."""
+    n = _normaliza_txt(nome)
+    if not n:
+        return ""
+    for chave, rotulo in GRUPOS_CLIENTE.items():
+        if chave in n:
+            return rotulo
+    # título capitalizado como fallback de agrupamento por nome normalizado
+    return " ".join(w.capitalize() for w in n.split())
+
 def insert_data(record: dict):
     try:
         sb = get_supabase()
@@ -202,6 +242,41 @@ if pagina == "Dashboard":
     else:
         st.info("Nenhum dado cadastrado ainda.")
 
+
+    # ── Regra de pagamento por cliente (IMC Saste) ──
+    st.markdown("---")
+    st.markdown("#### Regras de pagamento por cliente")
+    df_aud = load_audiencias()
+    hoje_d = date.today()
+    ini_mes = hoje_d.replace(day=1)
+    meses_pt = ["janeiro","fevereiro","março","abril","maio","junho","julho",
+                "agosto","setembro","outubro","novembro","dezembro"]
+    st.caption(f"Referência: {meses_pt[hoje_d.month-1]}/{hoje_d.year} (mês vigente).")
+    qtd_imc = 0
+    if not df_aud.empty and "data" in df_aud.columns and "cliente" in df_aud.columns:
+        _dt = pd.to_datetime(df_aud["data"], errors="coerce", dayfirst=True)
+        _mes = df_aud[(_dt >= pd.Timestamp(ini_mes)) & (_dt < pd.Timestamp(hoje_d) + pd.Timedelta(days=1))]
+        _canon = _mes["cliente"].apply(cliente_canonico)
+        qtd_imc = int((_canon == "IMC Saste Construções, Serviços e Comércio Ltda.").sum())
+    meta_imc = 30
+    atingida = qtd_imc > meta_imc
+    pct = min(100, int(round((qtd_imc / meta_imc) * 100))) if meta_imc else 0
+    cor_borda = COR_DOURADO if atingida else COR_VERMELHO
+    cor_barra = "#2E9E5B" if atingida else COR_VERMELHO
+    selo = ('<span style="background:#2E9E5B;color:#fff;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:700;">Regra atingida</span>'
+            if atingida else
+            '<span style="background:#eee;color:#777;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:600;">Em andamento</span>')
+    ponto = f'<span style="width:12px;height:12px;border-radius:50%;background:{"#2E9E5B" if atingida else "#ccc"};display:inline-block;"></span>'
+    st.markdown(
+        f'<div style="background:#fff;border-left:5px solid {cor_borda};border-radius:8px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);max-width:520px;">'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:{COR_VERMELHO};">IMC Saste Construções, Serviços e Comércio Ltda.</strong>{ponto}</div>'
+        f'<p style="margin:6px 0 2px;color:#555;font-size:0.82rem;">Quantidade superior a 30 audiências realizadas</p>'
+        f'<div style="font-size:1.6rem;font-weight:700;color:{COR_VERMELHO};">{qtd_imc} <span style="font-size:0.85rem;color:#888;font-weight:400;">/ meta {meta_imc} audiências</span></div>'
+        f'<div style="background:#eee;border-radius:6px;height:8px;margin:8px 0;"><div style="width:{pct}%;background:{cor_barra};height:8px;border-radius:6px;"></div></div>'
+        f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:#777;font-size:0.78rem;">{pct}% da meta</span>{selo}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 # ── CADASTRO ───────────────────────────────────────────────────────────────
 elif pagina == "Cadastro":
     st.subheader("Cadastrar Correspondente")
@@ -442,7 +517,6 @@ elif pagina == "Editar/Excluir":
 elif pagina == "Gestão Financeira":
     st.subheader("Gestão Financeira de Audiências")
 
-    # Colunas exibidas (a partir da planilha consolidada)
     COLUNAS_FIN = [
         "Data", "Hora de Início", "ID", "Natureza", "Número CNJ",
         "Tipo / Subtipo", "Descrição", "Responsável pela Audiência", "Valor",
@@ -451,7 +525,12 @@ elif pagina == "Gestão Financeira":
         "Classificação do Processo", "Observações", "Empresa Contratada",
         "Arquivo de Origem",
     ]
-    # Mapeamento rótulo exibido -> coluna no Supabase (tabela audiencias)
+    # Colunas exibidas na prévia da importação (apenas estas)
+    COLS_PREVIA = [
+        "Data/Hora de Início", "Natureza", "Tipo / Subtipo",
+        "Responsável pela Audiência", "Valor", "Cliente", "Parte Contrária",
+        "Cidade", "UF", "Classificação do Processo", "Empresa Contratada",
+    ]
     MAPA_DB = {
         "Data": "data", "Hora de Início": "hora_inicio", "ID": "id_audiencia",
         "Natureza": "natureza", "Número CNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
@@ -463,32 +542,12 @@ elif pagina == "Gestão Financeira":
         "Empresa Contratada": "empresa_contratada", "Arquivo de Origem": "arquivo_origem",
     }
 
-    @st.cache_data(ttl=60)
-    def load_audiencias():
-        try:
-            sb = get_supabase()
-            resp = sb.table("audiencias").select("*").execute()
-            return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
-        except Exception as e:
-            st.error(f"Erro ao carregar audiências: {e}")
-            return pd.DataFrame()
-
-    def insert_audiencias(registros):
-        try:
-            sb = get_supabase()
-            sb.table("audiencias").insert(registros).execute()
-            st.cache_data.clear()
-            return True
-        except Exception as e:
-            st.error(f"Erro ao salvar: {e}")
-            return False
-
     def parte_data(serie):
-        # Divide 'Data/Hora de Início' em (data dd/mm/aaaa, hora HHhMM)
         dt = pd.to_datetime(serie, errors="coerce", dayfirst=True)
-        data_fmt = dt.dt.strftime("%d/%m/%Y")
-        hora_fmt = dt.dt.strftime("%Hh%M")
-        return data_fmt, hora_fmt, dt
+        return dt.dt.strftime("%d/%m/%Y"), dt.dt.strftime("%Hh%M"), dt
+
+    def fmt_brl(v):
+        return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
 
     # ── Carrega lançamentos salvos no Supabase ──
     df_db = load_audiencias()
@@ -501,100 +560,123 @@ elif pagina == "Gestão Financeira":
     else:
         df_fin = pd.DataFrame(columns=COLUNAS_FIN)
 
-    # Coluna auxiliar de data (datetime) para filtros e indicadores
     if not df_fin.empty:
         df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
+        df_fin["_cli_canon"] = df_fin["Cliente"].apply(cliente_canonico)
+        df_fin["_valor_num"] = pd.to_numeric(df_fin["Valor"], errors="coerce").fillna(0.0)
     else:
         df_fin["_dt"] = pd.NaT
+        df_fin["_cli_canon"] = ""
+        df_fin["_valor_num"] = 0.0
 
-    # ── Filtros ── (definidos antes para alimentar os indicadores) ──
+    # ── Filtros (iniciam no mês vigente) ──
     hoje = date.today()
     primeiro_dia_mes = hoje.replace(day=1)
     st.markdown("#### Lançamentos de audiências")
-    f1, f2, f3, f4, f5 = st.columns(5)
+    f1, f2, f3 = st.columns(3)
     data_ini = f1.date_input("Data início", value=primeiro_dia_mes, key="fin_f_ini", format="DD/MM/YYYY")
     data_fim = f2.date_input("Data fim", value=hoje, key="fin_f_fim", format="DD/MM/YYYY")
-    clientes_opts = ["Todos os clientes"] + (sorted([x for x in df_fin["Cliente"].dropna().unique() if str(x).strip()]) if "Cliente" in df_fin.columns and not df_fin.empty else [])
-    filtro_cliente = f3.selectbox("Cliente", clientes_opts, key="fin_f_cliente")
-    modal_opts = ["Todas as modalidades"] + (sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if "Modalidade" in df_fin.columns and not df_fin.empty else [])
-    filtro_modal = f4.selectbox("Modalidade", modal_opts, key="fin_f_modal")
-    emp_opts = ["Todas as empresas"] + (sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if "Empresa Contratada" in df_fin.columns and not df_fin.empty else [])
-    filtro_emp = f5.selectbox("Empresa Contratada", emp_opts, key="fin_f_emp")
+    # Clientes agrupados por nome canônico (sem repetição)
+    clientes_canon = sorted([x for x in df_fin["_cli_canon"].dropna().unique() if x]) if not df_fin.empty else []
+    filtro_clientes = f3.multiselect("Cliente (um ou mais)", clientes_canon, key="fin_f_cliente")
+    f4, f5, f6, f7 = st.columns(4)
+    modal_opts = sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
+    filtro_modal = f4.multiselect("Modalidade", modal_opts, key="fin_f_modal")
+    emp_opts = sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
+    filtro_emp = f5.multiselect("Empresa Contratada", emp_opts, key="fin_f_emp")
+    sol_opts = sorted([x for x in df_fin["Solicitação"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
+    filtro_sol = f6.multiselect("Solicitação", sol_opts, key="fin_f_sol")
+    clas_opts = sorted([x for x in df_fin["Classificação do Processo"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
+    filtro_clas = f7.multiselect("Classificação do Processo", clas_opts, key="fin_f_clas")
 
-    usa_periodo = bool(data_ini and data_fim)
-
-    # Base para os indicadores: período filtrado (ou mês vigente por padrão)
-    if not df_fin.empty:
+    # ── Aplica filtros (período sempre ativo; default = mês vigente) ──
+    dff = df_fin.copy()
+    for c in dff.columns:
+        if dff[c].dtype == object:
+            dff[c] = dff[c].fillna("")
+    if data_ini and data_fim and "_dt" in dff.columns and not dff.empty:
         ini_ts = pd.Timestamp(data_ini)
         fim_ts = pd.Timestamp(data_fim) + pd.Timedelta(days=1)
-        base_ind = df_fin[(df_fin["_dt"] >= ini_ts) & (df_fin["_dt"] < fim_ts)]
-    else:
-        base_ind = df_fin
+        dff = dff[(dff["_dt"] >= ini_ts) & (dff["_dt"] < fim_ts)]
+    if filtro_clientes:
+        dff = dff[dff["_cli_canon"].isin(filtro_clientes)]
+    if filtro_modal:
+        dff = dff[dff["Modalidade"].isin(filtro_modal)]
+    if filtro_emp:
+        dff = dff[dff["Empresa Contratada"].isin(filtro_emp)]
+    if filtro_sol:
+        dff = dff[dff["Solicitação"].isin(filtro_sol)]
+    if filtro_clas:
+        dff = dff[dff["Classificação do Processo"].isin(filtro_clas)]
 
-    # ── Indicadores gerenciais: regras de pagamento por cliente ──
-    REGRAS_PAGAMENTO = [
-        {
-            "cliente": "IMC Saste Construções, Serviços e Comércio Ltda.",
-            "descricao": "Quantidade superior a 30 audiências realizadas",
-            "tipo": "contagem", "meta": 30, "estrito": True,
-            "unidade": "audiências", "municipio": None,
-        },
-    ]
-
-    def calcula_metrica(base, regra):
-        if base.empty or "Cliente" not in base.columns:
-            return 0.0
-        sub = base[base["Cliente"] == regra["cliente"]]
-        tipo = regra.get("tipo")
-        if tipo == "valor" and "Valor" in sub.columns:
-            return float(pd.to_numeric(sub["Valor"], errors="coerce").fillna(0).sum())
-        if tipo == "municipio" and regra.get("municipio") and "Cidade" in sub.columns:
-            return float(len(sub[sub["Cidade"] == regra["municipio"]]))
-        return float(len(sub))
-
+    # ── Indicadores e gráficos (refletem o filtro de data; default mês vigente) ──
+    total_contratado = float(dff["_valor_num"].sum()) if not dff.empty else 0.0
+    qtd_lanc = len(dff)
     meses_pt = ["janeiro","fevereiro","março","abril","maio","junho","julho",
                 "agosto","setembro","outubro","novembro","dezembro"]
-    if usa_periodo:
-        legenda_periodo = f"período {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+    if data_ini and data_fim:
+        legenda = f"{data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
     else:
-        legenda_periodo = f"{meses_pt[hoje.month-1]}/{hoje.year}"
+        legenda = f"{meses_pt[hoje.month-1]}/{hoje.year}"
 
-    st.markdown("#### Regras de pagamento por cliente")
-    st.caption(f"Referência: {legenda_periodo}. Parâmetros configuráveis — contagem de audiências, "
-               "total por município, valores acumulados ou outros. Clientes elegíveis recebem o selo Regra atingida.")
+    cm1, cm2 = st.columns(2)
+    cm1.markdown(f'<div class="metric-card"><h3>{fmt_brl(total_contratado)}</h3><p>Total Contratado ({legenda})</p></div>', unsafe_allow_html=True)
+    cm2.markdown(f'<div class="metric-card"><h3>{qtd_lanc}</h3><p>Lançamentos no período</p></div>', unsafe_allow_html=True)
 
-    if REGRAS_PAGAMENTO:
-        cols_ind = st.columns(min(3, len(REGRAS_PAGAMENTO)))
-        for i, regra in enumerate(REGRAS_PAGAMENTO):
-            atual = calcula_metrica(base_ind, regra)
-            meta = float(regra.get("meta", 0) or 0)
-            estrito = regra.get("estrito", False)
-            atingida = (atual > meta) if estrito else ((atual >= meta) if meta else False)
-            pct = int(round((atual / meta) * 100)) if meta else 0
-            unidade = regra.get("unidade", "")
-            if regra.get("tipo") == "valor":
-                atual_fmt = "R$ " + ("%0.2f" % atual).replace(",", "X").replace(".", ",").replace("X", ".")
-                meta_fmt = "R$ " + ("%0.2f" % meta).replace(",", "X").replace(".", ",").replace("X", ".")
-            else:
-                atual_fmt = str(int(atual)); meta_fmt = str(int(meta))
-            cor_borda = COR_DOURADO if atingida else COR_VERMELHO
-            cor_barra = "#2E9E5B" if atingida else COR_VERMELHO
-            largura = min(100, pct)
-            selo = (f'<span style="background:#2E9E5B;color:#fff;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:700;">Regra atingida</span>'
-                    if atingida else
-                    f'<span style="background:#eee;color:#777;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:600;">Em andamento</span>')
-            ponto = (f'<span style="width:12px;height:12px;border-radius:50%;background:{"#2E9E5B" if atingida else "#ccc"};display:inline-block;"></span>')
-            with cols_ind[i % len(cols_ind)]:
-                st.markdown(
-                    f'<div style="background:#fff;border-left:5px solid {cor_borda};border-radius:8px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:12px;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:{COR_VERMELHO};">{regra["cliente"]}</strong>{ponto}</div>'
-                    f'<p style="margin:6px 0 2px;color:#555;font-size:0.82rem;">{regra["descricao"]}</p>'
-                    f'<div style="font-size:1.6rem;font-weight:700;color:{COR_VERMELHO};">{atual_fmt} <span style="font-size:0.85rem;color:#888;font-weight:400;">/ meta {meta_fmt} {unidade}</span></div>'
-                    f'<div style="background:#eee;border-radius:6px;height:8px;margin:8px 0;"><div style="width:{largura}%;background:{cor_barra};height:8px;border-radius:6px;"></div></div>'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:#777;font-size:0.78rem;">{pct}% da meta</span>{selo}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+    if dff.empty:
+        st.info("Sem dados no período/filtros selecionados. Ajuste o filtro de data (padrão: mês vigente) ou importe uma planilha.")
+    else:
+        PALETA = [COR_VERMELHO, COR_DOURADO, COR_DESTAQUE, "#D2691E", "#8B4513", "#5C1010"]
+        g1, g2 = st.columns(2)
+        # Total por Cliente (10+)
+        tc = dff.groupby("_cli_canon")["_valor_num"].sum().reset_index()
+        tc.columns = ["Cliente", "Total"]
+        tc = tc[tc["Total"] > 0].sort_values("Total", ascending=False).head(10)
+        if not tc.empty:
+            fig_tc = px.bar(tc, x="Total", y="Cliente", orientation="h",
+                            title="Total por Cliente (10 maiores)",
+                            color_discrete_sequence=[COR_VERMELHO])
+            fig_tc.update_layout(yaxis={"categoryorder": "total ascending"})
+            g1.plotly_chart(fig_tc, use_container_width=True)
+        # Valor das contratações (evolução por dia)
+        vc = dff.dropna(subset=["_dt"]).copy()
+        if not vc.empty:
+            vc["Dia"] = vc["_dt"].dt.date
+            vc = vc.groupby("Dia")["_valor_num"].sum().reset_index()
+            vc.columns = ["Dia", "Valor"]
+            fig_vc = px.line(vc, x="Dia", y="Valor", markers=True,
+                             title="Valor das contratações",
+                             color_discrete_sequence=[COR_DOURADO])
+            g2.plotly_chart(fig_vc, use_container_width=True)
+
+        g3, g4 = st.columns(2)
+        # Empresa Contratada
+        ec = dff.groupby("Empresa Contratada")["_valor_num"].sum().reset_index()
+        ec.columns = ["Empresa", "Total"]
+        ec = ec[(ec["Empresa"].astype(str).str.strip() != "") & (ec["Total"] > 0)].sort_values("Total", ascending=False).head(15)
+        if not ec.empty:
+            fig_ec = px.bar(ec, x="Empresa", y="Total",
+                            title="Empresa Contratada",
+                            color_discrete_sequence=[COR_DESTAQUE])
+            g3.plotly_chart(fig_ec, use_container_width=True)
+        # Total por Estado
+        te = dff.groupby("UF")["_valor_num"].sum().reset_index()
+        te.columns = ["UF", "Total"]
+        te = te[(te["UF"].astype(str).str.strip() != "") & (te["Total"] > 0)].sort_values("Total", ascending=False)
+        if not te.empty:
+            fig_te = px.bar(te, x="UF", y="Total",
+                            title="Total por Estado",
+                            color_discrete_sequence=[COR_VERMELHO])
+            g4.plotly_chart(fig_te, use_container_width=True)
+        # Total por Cidade
+        tcid = dff.groupby("Cidade")["_valor_num"].sum().reset_index()
+        tcid.columns = ["Cidade", "Total"]
+        tcid = tcid[(tcid["Cidade"].astype(str).str.strip() != "") & (tcid["Total"] > 0)].sort_values("Total", ascending=False).head(15)
+        if not tcid.empty:
+            fig_tcid = px.bar(tcid, x="Cidade", y="Total",
+                              title="Total por Cidade (15 maiores)",
+                              color_discrete_sequence=[COR_DOURADO])
+            st.plotly_chart(fig_tcid, use_container_width=True)
 
     st.markdown("---")
 
@@ -603,7 +685,6 @@ elif pagina == "Gestão Financeira":
     st.caption("Carregamento em massa — arquivos .xlsx ou .csv. A primeira linha deve conter os cabeçalhos das colunas.")
     arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
 
-    # Modelo de planilha para preenchimento posterior
     COLS_MODELO = ["Data/Hora de Início", "ID", "Natureza", "Número CNJ", "Tipo / Subtipo",
                    "Descrição", "Responsável pela Audiência", "Valor", "Cliente", "Parte Contrária",
                    "Modalidade", "Solicitação", "Local", "Cidade", "UF", "Preposto",
@@ -621,10 +702,12 @@ elif pagina == "Gestão Financeira":
             if arq_fin.name.endswith(".csv"):
                 df_novo = pd.read_csv(arq_fin, dtype=str)
             else:
-                df_novo = pd.read_excel(arq_fin, dtype=str)
+                # Lê a aba "Consolidado" quando existir; caso contrário, a primeira
+                xls = pd.ExcelFile(arq_fin)
+                aba = "Consolidado" if "Consolidado" in xls.sheet_names else xls.sheet_names[0]
+                df_novo = pd.read_excel(xls, sheet_name=aba, dtype=str)
             df_novo.columns = [str(c).strip() for c in df_novo.columns]
 
-            # Divide 'Data/Hora de Início' em Data e Hora de Início
             col_dh = None
             for c in df_novo.columns:
                 if c.lower().replace(" ", "") in ("data/horadeinício", "data/horadeinicio", "datahoradeinicio"):
@@ -635,8 +718,10 @@ elif pagina == "Gestão Financeira":
                 df_novo["Data"] = d_fmt
                 df_novo["Hora de Início"] = h_fmt
 
-            st.write("Prévia dos dados:")
-            st.dataframe(df_novo.head(10), hide_index=True, use_container_width=True)
+            st.write(f"Prévia dos dados ({len(df_novo)} linha(s)):")
+            cols_prev = [c for c in COLS_PREVIA if c in df_novo.columns]
+            st.dataframe(df_novo[cols_prev].head(10) if cols_prev else df_novo.head(10),
+                         hide_index=True, use_container_width=True)
 
             if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
                 registros = []
@@ -650,8 +735,15 @@ elif pagina == "Gestão Financeira":
                         else:
                             rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                     registros.append(rec)
-                if registros and insert_audiencias(registros):
-                    st.success(f"{len(registros)} registro(s) importado(s) e salvo(s) com sucesso.")
+                if registros:
+                    sb = get_supabase()
+                    total_ok = 0
+                    for i in range(0, len(registros), 500):
+                        lote = registros[i:i+500]
+                        sb.table("audiencias").insert(lote).execute()
+                        total_ok += len(lote)
+                    st.cache_data.clear()
+                    st.success(f"{total_ok} registro(s) importado(s) e salvo(s) com sucesso.")
                     st.rerun()
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
@@ -659,21 +751,6 @@ elif pagina == "Gestão Financeira":
     st.markdown("---")
 
     # ── Tabela de lançamentos com filtros aplicados ──
-    dff = df_fin.copy()
-    for c in dff.columns:
-        if dff[c].dtype == object:
-            dff[c] = dff[c].fillna("")
-    if usa_periodo and "_dt" in dff.columns:
-        ini_ts = pd.Timestamp(data_ini)
-        fim_ts = pd.Timestamp(data_fim) + pd.Timedelta(days=1)
-        dff = dff[(dff["_dt"] >= ini_ts) & (dff["_dt"] < fim_ts)]
-    if filtro_cliente != "Todos os clientes" and "Cliente" in dff.columns:
-        dff = dff[dff["Cliente"] == filtro_cliente]
-    if filtro_modal != "Todas as modalidades" and "Modalidade" in dff.columns:
-        dff = dff[dff["Modalidade"] == filtro_modal]
-    if filtro_emp != "Todas as empresas" and "Empresa Contratada" in dff.columns:
-        dff = dff[dff["Empresa Contratada"] == filtro_emp]
-
     st.write(f"**{len(dff)} lançamento(s) encontrado(s)**")
     cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
     if dff.empty:
