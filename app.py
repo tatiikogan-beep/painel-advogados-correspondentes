@@ -135,7 +135,7 @@ else:
 st.sidebar.markdown(f'<p style="color:{COR_DOURADO};font-size:0.75rem;text-align:center;'
                     f'margin-bottom:16px;">Advogados Correspondentes</p>', unsafe_allow_html=True)
 
-PAGINAS = ["Dashboard", "Cadastro", "Importar Planilha", "Registros", "Editar/Excluir"]
+PAGINAS = ["Dashboard", "Cadastro", "Importar Planilha", "Registros", "Editar/Excluir", "Gestão Financeira"]
 st.sidebar.markdown('<p style="font-size:0.7rem;color:rgba(255,255,255,0.5);'
                     'margin-bottom:4px;">NAVEGACAO</p>', unsafe_allow_html=True)
 pagina = st.sidebar.radio("NAVEGACAO", PAGINAS, label_visibility="collapsed")
@@ -436,3 +436,163 @@ elif pagina == "Editar/Excluir":
                 if delete_data(reg_id):
                     st.success("Registro excluido!")
                     st.cache_data.clear()
+
+
+# ── GESTÃO FINANCEIRA ──────────────────────────────────────────
+elif pagina == "Gestão Financeira":
+    st.subheader("Gestão Financeira de Audiências")
+
+    # Colunas esperadas da base financeira (planilha consolidada)
+    COLUNAS_FIN = [
+        "Data", "Hora de Início", "ID", "Natureza", "Número CNJ",
+        "Tipo / Subtipo", "Descrição", "Responsável pela Audiência", "Valor",
+        "Cliente", "Parte Contrária", "Modalidade", "Solicitação", "Local",
+        "Cidade", "UF", "Preposto", "Dados dos Correspondentes",
+        "Classificação do Processo", "Observações", "Empresa Contratada",
+        "Arquivo de Origem",
+    ]
+
+    # Regras de pagamento por cliente (flexíveis: contagem, por município, valor, etc.)
+    REGRAS_PAGAMENTO = [
+        {
+            "cliente": "IMC Saste Construções, Serviços e Comércio Ltda.",
+            "descricao": "Quantidade superior a 30 audiências realizadas",
+            "tipo": "contagem",
+            "meta": 30,
+            "estrito": True,  # 'superior a' => exige ultrapassar a meta
+            "unidade": "audiências",
+            "municipio": None,
+        },
+    ]
+
+    def _calcula_metrica(df_fin, regra):
+        if df_fin.empty:
+            return 0.0
+        base = df_fin[df_fin["Cliente"] == regra["cliente"]] if "Cliente" in df_fin.columns else df_fin.iloc[0:0]
+        tipo = regra.get("tipo")
+        if tipo == "contagem":
+            return float(len(base))
+        if tipo == "municipio":
+            if "Cidade" in base.columns and regra.get("municipio"):
+                return float(len(base[base["Cidade"] == regra["municipio"]]))
+            return 0.0
+        if tipo == "valor":
+            if "Valor" in base.columns:
+                return float(pd.to_numeric(base["Valor"], errors="coerce").fillna(0).sum())
+            return 0.0
+        return float(len(base))
+
+    # Carrega a base financeira da sessão (via importação de planilha) ou vazia
+    if "df_financeiro" in st.session_state:
+        df_fin = st.session_state["df_financeiro"].copy()
+    else:
+        df_fin = pd.DataFrame(columns=COLUNAS_FIN)
+
+    # ── Indicadores gerenciais: regras de pagamento por cliente ──
+    st.markdown("#### Regras de pagamento por cliente")
+    st.caption("Parâmetros configuráveis — contagem de audiências, total por município, "
+               "valores acumulados ou outros. Clientes elegíveis recebem o selo Regra atingida.")
+
+    if REGRAS_PAGAMENTO:
+        cols_ind = st.columns(min(3, len(REGRAS_PAGAMENTO)))
+        for i, regra in enumerate(REGRAS_PAGAMENTO):
+            atual = _calcula_metrica(df_fin, regra)
+            meta = float(regra.get("meta", 0) or 0)
+            estrito = regra.get("estrito", False)
+            atingida = (atual > meta) if estrito else (atual >= meta) if meta else False
+            pct = int(round((atual / meta) * 100)) if meta else 0
+            unidade = regra.get("unidade", "")
+            if regra.get("tipo") == "valor":
+                atual_fmt = "R$ " + ("%0.2f" % atual).replace(",", "X").replace(".", ",").replace("X", ".")
+                meta_fmt = "R$ " + ("%0.2f" % meta).replace(",", "X").replace(".", ",").replace("X", ".")
+            else:
+                atual_fmt = str(int(atual))
+                meta_fmt = str(int(meta))
+            cor_borda = COR_DOURADO if atingida else COR_VERMELHO
+            cor_barra = "#2E9E5B" if atingida else COR_VERMELHO
+            largura = min(100, pct)
+            selo = (f'<span style="background:#2E9E5B;color:#fff;padding:3px 12px;'
+                    f'border-radius:12px;font-size:0.72rem;font-weight:700;">Regra atingida</span>'
+                    if atingida else
+                    f'<span style="background:#eee;color:#777;padding:3px 12px;'
+                    f'border-radius:12px;font-size:0.72rem;font-weight:600;">Em andamento</span>')
+            ponto = ('<span style="width:12px;height:12px;border-radius:50%;background:#2E9E5B;'
+                     'display:inline-block;"></span>' if atingida else
+                     '<span style="width:12px;height:12px;border-radius:50%;background:#ccc;'
+                     'display:inline-block;"></span>')
+            with cols_ind[i % len(cols_ind)]:
+                st.markdown(
+                    f'<div style="background:#fff;border-left:5px solid {cor_borda};'
+                    f'border-radius:8px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);'
+                    f'margin-bottom:12px;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<strong style="color:{COR_VERMELHO};">{regra["cliente"]}</strong>{ponto}</div>'
+                    f'<p style="margin:6px 0 2px;color:#555;font-size:0.82rem;">{regra["descricao"]}</p>'
+                    f'<div style="font-size:1.6rem;font-weight:700;color:{COR_VERMELHO};">'
+                    f'{atual_fmt} <span style="font-size:0.85rem;color:#888;font-weight:400;">/ meta {meta_fmt} {unidade}</span></div>'
+                    f'<div style="background:#eee;border-radius:6px;height:8px;margin:8px 0;">'
+                    f'<div style="width:{largura}%;background:{cor_barra};height:8px;border-radius:6px;"></div></div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                    f'<span style="color:#777;font-size:0.78rem;">{pct}% da meta</span>{selo}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.info("Nenhuma regra de pagamento cadastrada.")
+
+    st.markdown("---")
+
+    # ── Importação de dados por planilha (carregamento em massa) ──
+    st.markdown("#### Importar planilha de audiências")
+    st.caption("Carregamento em massa — arquivos .xlsx ou .csv. A primeira linha deve conter os cabeçalhos das colunas.")
+    arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
+    if arq_fin is not None:
+        try:
+            if arq_fin.name.endswith(".csv"):
+                df_novo = pd.read_csv(arq_fin, dtype=str)
+            else:
+                df_novo = pd.read_excel(arq_fin, dtype=str)
+            for c in COLUNAS_FIN:
+                if c not in df_novo.columns:
+                    df_novo[c] = ""
+            st.session_state["df_financeiro"] = df_novo
+            df_fin = df_novo.copy()
+            st.success(f"Planilha importada com sucesso — {len(df_novo)} registro(s) carregado(s).")
+        except Exception as e:
+            st.error(f"Erro ao processar a planilha: {e}")
+
+    st.markdown("---")
+
+    # ── Filtros ──
+    st.markdown("#### Lançamentos de audiências")
+    f1, f2, f3, f4 = st.columns(4)
+    filtro_data = f1.text_input("Data", placeholder="dd/mm/aaaa", key="fin_f_data")
+    clientes_opts = ["Todos os clientes"] + (sorted([x for x in df_fin["Cliente"].dropna().unique() if str(x).strip()]) if "Cliente" in df_fin.columns and not df_fin.empty else [])
+    filtro_cliente = f2.selectbox("Cliente", clientes_opts, key="fin_f_cliente")
+    modal_opts = ["Todas as modalidades"] + (sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if "Modalidade" in df_fin.columns and not df_fin.empty else [])
+    filtro_modal = f3.selectbox("Modalidade", modal_opts, key="fin_f_modal")
+    emp_opts = ["Todas as empresas"] + (sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if "Empresa Contratada" in df_fin.columns and not df_fin.empty else [])
+    filtro_emp = f4.selectbox("Empresa Contratada", emp_opts, key="fin_f_emp")
+
+    dff = df_fin.copy()
+    for c in dff.columns:
+        if dff[c].dtype == object:
+            dff[c] = dff[c].fillna("")
+    if filtro_data and "Data" in dff.columns:
+        dff = dff[dff["Data"].astype(str).str.contains(filtro_data, na=False)]
+    if filtro_cliente != "Todos os clientes" and "Cliente" in dff.columns:
+        dff = dff[dff["Cliente"] == filtro_cliente]
+    if filtro_modal != "Todas as modalidades" and "Modalidade" in dff.columns:
+        dff = dff[dff["Modalidade"] == filtro_modal]
+    if filtro_emp != "Todas as empresas" and "Empresa Contratada" in dff.columns:
+        dff = dff[dff["Empresa Contratada"] == filtro_emp]
+
+    st.write(f"**{len(dff)} lançamento(s) encontrado(s)**")
+    cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
+    if dff.empty:
+        st.info("Nenhum lançamento. Importe uma planilha para visualizar os dados.")
+    else:
+        st.dataframe(dff[cols_exibir], hide_index=True, use_container_width=True)
+        buf_fin = io.BytesIO()
+        dff[cols_exibir].to_csv(buf_fin, index=False)
+        st.download_button("Exportar CSV", buf_fin.getvalue(), "gestao_financeira.csv", "text/csv", key="fin_export")
