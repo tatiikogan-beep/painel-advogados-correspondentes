@@ -652,15 +652,18 @@ elif pagina == "Gestão Financeira":
                             color_discrete_sequence=[COR_VERMELHO])
             fig_tc.update_layout(yaxis={"categoryorder": "total ascending"})
             g1.plotly_chart(fig_tc, use_container_width=True)
-        # Valor das contratações (evolução por dia)
+        # Total de contratações por mês (soma)
         vc = dff.dropna(subset=["_dt"]).copy()
         if not vc.empty:
-            vc["Dia"] = vc["_dt"].dt.date
-            vc = vc.groupby("Dia")["_valor_num"].sum().reset_index()
-            vc.columns = ["Dia", "Valor"]
-            fig_vc = px.line(vc, x="Dia", y="Valor", markers=True,
-                             title="Valor das contratações",
-                             color_discrete_sequence=[COR_DOURADO])
+            vc["MesData"] = vc["_dt"].dt.to_period("M").dt.to_timestamp()
+            vc = vc.groupby("MesData")["_valor_num"].sum().reset_index()
+            vc.columns = ["MesData", "Valor"]
+            vc = vc.sort_values("MesData")
+            vc["Mês"] = vc["MesData"].dt.strftime("%m/%Y")
+            fig_vc = px.bar(vc, x="Mês", y="Valor",
+                            title="Total de contratações por mês",
+                            color_discrete_sequence=[COR_DOURADO])
+            fig_vc.update_xaxes(type="category")
             g2.plotly_chart(fig_vc, use_container_width=True)
 
         g3, g4 = st.columns(2)
