@@ -552,7 +552,12 @@ elif pagina == "Gestão Financeira":
     }
 
     def parte_data(serie):
-        dt = pd.to_datetime(serie, errors="coerce", dayfirst=True)
+        # source pode vir ISO (2025-04-07 10:50:00) ou dd/mm/aaaa; tenta ISO primeiro
+        dt = pd.to_datetime(serie, errors="coerce")
+        falta = dt.isna()
+        if falta.any():
+            dt2 = pd.to_datetime(serie.where(falta), errors="coerce", dayfirst=True)
+            dt = dt.fillna(dt2)
         return dt.dt.strftime("%d/%m/%Y"), dt.dt.strftime("%Hh%M"), dt
 
     def fmt_brl(v):
