@@ -76,11 +76,20 @@ def load_data():
 
 @st.cache_data(ttl=60)
 def load_audiencias():
-    """Carrega audiências salvas no Supabase (mesmo modelo de load_data)."""
+    """Carrega audiências salvas no Supabase com paginação (evita limite de 1000)."""
     try:
         sb = get_supabase()
-        resp = sb.table("audiencias").select("*").execute()
-        return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+        todos = []
+        passo = 1000
+        inicio = 0
+        while True:
+            resp = sb.table("audiencias").select("*").range(inicio, inicio + passo - 1).execute()
+            lote = resp.data or []
+            todos.extend(lote)
+            if len(lote) < passo:
+                break
+            inicio += passo
+        return pd.DataFrame(todos) if todos else pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao carregar audiências: {e}")
         return pd.DataFrame()
