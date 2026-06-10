@@ -802,7 +802,10 @@ elif pagina == "Gestão Financeira":
             fmt_cab = wb.add_format({"bold": True, "bg_color": "#8B1A1A", "font_color": "#FFFFFF", "border": 1, "align": "center", "valign": "vcenter"})
             for col_idx, nome in enumerate(df_export.columns):
                 ws.write(0, col_idx, nome, fmt_cab)
-                larg = max(len(str(nome)), int(df_export[nome].astype(str).str.len().max() or 0)) + 2
+                serie_txt = df_export[nome].astype(str)
+                max_val = serie_txt.str.len().max()
+                max_len = int(max_val) if pd.notna(max_val) else 0
+                larg = max(len(str(nome)), max_len) + 2
                 ws.set_column(col_idx, col_idx, min(larg, 45))
             ws.freeze_panes(1, 0)
         st.download_button("Exportar Excel", buf_fin.getvalue(),
