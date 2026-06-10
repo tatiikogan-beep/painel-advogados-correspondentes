@@ -641,58 +641,64 @@ elif pagina == "Gestão Financeira":
         st.info("Sem dados no período/filtros selecionados. Ajuste o filtro de data (padrão: mês vigente) ou importe uma planilha.")
     else:
         PALETA = [COR_VERMELHO, COR_DOURADO, COR_DESTAQUE, "#D2691E", "#8B4513", "#5C1010"]
+        ALT_GRAF = 260
         g1, g2 = st.columns(2)
-        # Total por Cliente (10+)
-        tc = dff.groupby("_cli_canon")["_valor_num"].sum().reset_index()
-        tc.columns = ["Cliente", "Total"]
-        tc = tc[tc["Total"] > 0].sort_values("Total", ascending=False).head(10)
+        # Total por Cliente (10 maiores) — por quantidade de atividades
+        tc = dff.groupby("_cli_canon").size().reset_index(name="Quantidade")
+        tc.columns = ["Cliente", "Quantidade"]
+        tc = tc[tc["Quantidade"] > 0].sort_values("Quantidade", ascending=False).head(10)
         if not tc.empty:
-            fig_tc = px.bar(tc, x="Total", y="Cliente", orientation="h",
-                            title="Total por Cliente (10 maiores)",
+            fig_tc = px.bar(tc, x="Quantidade", y="Cliente", orientation="h",
+                            title="Total por Cliente (10 maiores)", text_auto=True,
                             color_discrete_sequence=[COR_VERMELHO])
-            fig_tc.update_layout(yaxis={"categoryorder": "total ascending"})
+            fig_tc.update_layout(yaxis={"categoryorder": "total ascending"}, height=ALT_GRAF,
+                                 margin=dict(l=10, r=10, t=40, b=10))
             g1.plotly_chart(fig_tc, use_container_width=True)
-        # Total de contratações por mês (soma)
+        # Total de contratações por mês — por quantidade de atividades
         vc = dff.dropna(subset=["_dt"]).copy()
         if not vc.empty:
             vc["MesData"] = vc["_dt"].dt.to_period("M").dt.to_timestamp()
-            vc = vc.groupby("MesData")["_valor_num"].sum().reset_index()
-            vc.columns = ["MesData", "Valor"]
+            vc = vc.groupby("MesData").size().reset_index(name="Quantidade")
+            vc.columns = ["MesData", "Quantidade"]
             vc = vc.sort_values("MesData")
             vc["Mês"] = vc["MesData"].dt.strftime("%m/%Y")
-            fig_vc = px.bar(vc, x="Mês", y="Valor",
-                            title="Total de contratações por mês",
+            fig_vc = px.bar(vc, x="Mês", y="Quantidade",
+                            title="Total de contratações por mês", text_auto=True,
                             color_discrete_sequence=[COR_DOURADO])
             fig_vc.update_xaxes(type="category")
+            fig_vc.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
             g2.plotly_chart(fig_vc, use_container_width=True)
 
         g3, g4 = st.columns(2)
-        # Empresa Contratada
+        # Empresa Contratada — por valor contratado
         ec = dff.groupby("Empresa Contratada")["_valor_num"].sum().reset_index()
         ec.columns = ["Empresa", "Total"]
         ec = ec[(ec["Empresa"].astype(str).str.strip() != "") & (ec["Total"] > 0)].sort_values("Total", ascending=False).head(15)
         if not ec.empty:
             fig_ec = px.bar(ec, x="Empresa", y="Total",
-                            title="Empresa Contratada",
+                            title="Empresa Contratada", text_auto=".2s",
                             color_discrete_sequence=[COR_DESTAQUE])
+            fig_ec.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
             g3.plotly_chart(fig_ec, use_container_width=True)
-        # Total por Estado
-        te = dff.groupby("UF")["_valor_num"].sum().reset_index()
-        te.columns = ["UF", "Total"]
-        te = te[(te["UF"].astype(str).str.strip() != "") & (te["Total"] > 0)].sort_values("Total", ascending=False)
+        # Total por Estado — por quantidade de atividades
+        te = dff.groupby("UF").size().reset_index(name="Quantidade")
+        te.columns = ["UF", "Quantidade"]
+        te = te[(te["UF"].astype(str).str.strip() != "") & (te["Quantidade"] > 0)].sort_values("Quantidade", ascending=False)
         if not te.empty:
-            fig_te = px.bar(te, x="UF", y="Total",
-                            title="Total por Estado",
+            fig_te = px.bar(te, x="UF", y="Quantidade",
+                            title="Total por Estado", text_auto=True,
                             color_discrete_sequence=[COR_VERMELHO])
+            fig_te.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
             g4.plotly_chart(fig_te, use_container_width=True)
-        # Total por Cidade
-        tcid = dff.groupby("Cidade")["_valor_num"].sum().reset_index()
-        tcid.columns = ["Cidade", "Total"]
-        tcid = tcid[(tcid["Cidade"].astype(str).str.strip() != "") & (tcid["Total"] > 0)].sort_values("Total", ascending=False).head(15)
+        # Total por Cidade (15 maiores) — por quantidade de atividades
+        tcid = dff.groupby("Cidade").size().reset_index(name="Quantidade")
+        tcid.columns = ["Cidade", "Quantidade"]
+        tcid = tcid[(tcid["Cidade"].astype(str).str.strip() != "") & (tcid["Quantidade"] > 0)].sort_values("Quantidade", ascending=False).head(15)
         if not tcid.empty:
-            fig_tcid = px.bar(tcid, x="Cidade", y="Total",
-                              title="Total por Cidade (15 maiores)",
+            fig_tcid = px.bar(tcid, x="Cidade", y="Quantidade",
+                              title="Total por Cidade (15 maiores)", text_auto=True,
                               color_discrete_sequence=[COR_DOURADO])
+            fig_tcid.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig_tcid, use_container_width=True)
 
     st.markdown("---")
