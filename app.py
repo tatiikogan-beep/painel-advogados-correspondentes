@@ -738,13 +738,24 @@ elif pagina == "Gestão Financeira":
                 if registros:
                     sb = get_supabase()
                     total_ok = 0
-                    for i in range(0, len(registros), 500):
-                        lote = registros[i:i+500]
-                        sb.table("audiencias").insert(lote).execute()
-                        total_ok += len(lote)
+                    erros = []
+                    for i in range(0, len(registros), 200):
+                        lote = registros[i:i+200]
+                        try:
+                            resp = sb.table("audiencias").insert(lote).execute()
+                            total_ok += len(resp.data) if getattr(resp, "data", None) else len(lote)
+                        except Exception as e_lote:
+                            erros.append(f"Lote {i}-{i+len(lote)}: {e_lote}")
                     st.cache_data.clear()
-                    st.success(f"{total_ok} registro(s) importado(s) e salvo(s) com sucesso.")
-                    st.rerun()
+                    try:
+                        chk = sb.table("audiencias").select("id", count="exact").execute()
+                        total_banco = chk.count if getattr(chk, "count", None) is not None else "?"
+                    except Exception:
+                        total_banco = "?"
+                    if erros:
+                        st.error(f"Importados {total_ok} de {len(registros)}. Total no banco: {total_banco}. Erros: " + " | ".join(erros[:3]))
+                    else:
+                        st.success(f"{total_ok} registro(s) importado(s). Total no banco agora: {total_banco}.")
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
 
