@@ -442,7 +442,7 @@ elif pagina == "Editar/Excluir":
 elif pagina == "Gestão Financeira":
     st.subheader("Gestão Financeira de Audiências")
 
-    # Colunas esperadas da base financeira (planilha consolidada)
+    # Colunas exibidas (a partir da planilha consolidada)
     COLUNAS_FIN = [
         "Data", "Hora de Início", "ID", "Natureza", "Número CNJ",
         "Tipo / Subtipo", "Descrição", "Responsável pela Audiência", "Valor",
@@ -451,135 +451,222 @@ elif pagina == "Gestão Financeira":
         "Classificação do Processo", "Observações", "Empresa Contratada",
         "Arquivo de Origem",
     ]
+    # Mapeamento rótulo exibido -> coluna no Supabase (tabela audiencias)
+    MAPA_DB = {
+        "Data": "data", "Hora de Início": "hora_inicio", "ID": "id_audiencia",
+        "Natureza": "natureza", "Número CNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
+        "Descrição": "descricao", "Responsável pela Audiência": "responsavel", "Valor": "valor",
+        "Cliente": "cliente", "Parte Contrária": "parte_contraria", "Modalidade": "modalidade",
+        "Solicitação": "solicitacao", "Local": "local", "Cidade": "cidade", "UF": "uf",
+        "Preposto": "preposto", "Dados dos Correspondentes": "dados_correspondentes",
+        "Classificação do Processo": "classificacao_processo", "Observações": "observacoes",
+        "Empresa Contratada": "empresa_contratada", "Arquivo de Origem": "arquivo_origem",
+    }
 
-    # Regras de pagamento por cliente (flexíveis: contagem, por município, valor, etc.)
+    @st.cache_data(ttl=60)
+    def load_audiencias():
+        try:
+            sb = get_supabase()
+            resp = sb.table("audiencias").select("*").execute()
+            return pd.DataFrame(resp.data) if resp.data else pd.DataFrame()
+        except Exception as e:
+            st.error(f"Erro ao carregar audiências: {e}")
+            return pd.DataFrame()
+
+    def insert_audiencias(registros):
+        try:
+            sb = get_supabase()
+            sb.table("audiencias").insert(registros).execute()
+            st.cache_data.clear()
+            return True
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
+            return False
+
+    def parte_data(serie):
+        # Divide 'Data/Hora de Início' em (data dd/mm/aaaa, hora HHhMM)
+        dt = pd.to_datetime(serie, errors="coerce", dayfirst=True)
+        data_fmt = dt.dt.strftime("%d/%m/%Y")
+        hora_fmt = dt.dt.strftime("%Hh%M")
+        return data_fmt, hora_fmt, dt
+
+    # ── Carrega lançamentos salvos no Supabase ──
+    df_db = load_audiencias()
+    if not df_db.empty:
+        inv = {v: k for k, v in MAPA_DB.items()}
+        df_fin = df_db.rename(columns=inv)
+        for c in COLUNAS_FIN:
+            if c not in df_fin.columns:
+                df_fin[c] = ""
+    else:
+        df_fin = pd.DataFrame(columns=COLUNAS_FIN)
+
+    # Coluna auxiliar de data (datetime) para filtros e indicadores
+    if not df_fin.empty:
+        df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
+    else:
+        df_fin["_dt"] = pd.NaT
+
+    # ── Filtros ── (definidos antes para alimentar os indicadores) ──
+    hoje = date.today()
+    primeiro_dia_mes = hoje.replace(day=1)
+    st.markdown("#### Lançamentos de audiências")
+    f1, f2, f3, f4, f5 = st.columns(5)
+    data_ini = f1.date_input("Data início", value=primeiro_dia_mes, key="fin_f_ini", format="DD/MM/YYYY")
+    data_fim = f2.date_input("Data fim", value=hoje, key="fin_f_fim", format="DD/MM/YYYY")
+    clientes_opts = ["Todos os clientes"] + (sorted([x for x in df_fin["Cliente"].dropna().unique() if str(x).strip()]) if "Cliente" in df_fin.columns and not df_fin.empty else [])
+    filtro_cliente = f3.selectbox("Cliente", clientes_opts, key="fin_f_cliente")
+    modal_opts = ["Todas as modalidades"] + (sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if "Modalidade" in df_fin.columns and not df_fin.empty else [])
+    filtro_modal = f4.selectbox("Modalidade", modal_opts, key="fin_f_modal")
+    emp_opts = ["Todas as empresas"] + (sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if "Empresa Contratada" in df_fin.columns and not df_fin.empty else [])
+    filtro_emp = f5.selectbox("Empresa Contratada", emp_opts, key="fin_f_emp")
+
+    usa_periodo = bool(data_ini and data_fim)
+
+    # Base para os indicadores: período filtrado (ou mês vigente por padrão)
+    if not df_fin.empty:
+        ini_ts = pd.Timestamp(data_ini)
+        fim_ts = pd.Timestamp(data_fim) + pd.Timedelta(days=1)
+        base_ind = df_fin[(df_fin["_dt"] >= ini_ts) & (df_fin["_dt"] < fim_ts)]
+    else:
+        base_ind = df_fin
+
+    # ── Indicadores gerenciais: regras de pagamento por cliente ──
     REGRAS_PAGAMENTO = [
         {
             "cliente": "IMC Saste Construções, Serviços e Comércio Ltda.",
             "descricao": "Quantidade superior a 30 audiências realizadas",
-            "tipo": "contagem",
-            "meta": 30,
-            "estrito": True,  # 'superior a' => exige ultrapassar a meta
-            "unidade": "audiências",
-            "municipio": None,
+            "tipo": "contagem", "meta": 30, "estrito": True,
+            "unidade": "audiências", "municipio": None,
         },
     ]
 
-    def _calcula_metrica(df_fin, regra):
-        if df_fin.empty:
+    def calcula_metrica(base, regra):
+        if base.empty or "Cliente" not in base.columns:
             return 0.0
-        base = df_fin[df_fin["Cliente"] == regra["cliente"]] if "Cliente" in df_fin.columns else df_fin.iloc[0:0]
+        sub = base[base["Cliente"] == regra["cliente"]]
         tipo = regra.get("tipo")
-        if tipo == "contagem":
-            return float(len(base))
-        if tipo == "municipio":
-            if "Cidade" in base.columns and regra.get("municipio"):
-                return float(len(base[base["Cidade"] == regra["municipio"]]))
-            return 0.0
-        if tipo == "valor":
-            if "Valor" in base.columns:
-                return float(pd.to_numeric(base["Valor"], errors="coerce").fillna(0).sum())
-            return 0.0
-        return float(len(base))
+        if tipo == "valor" and "Valor" in sub.columns:
+            return float(pd.to_numeric(sub["Valor"], errors="coerce").fillna(0).sum())
+        if tipo == "municipio" and regra.get("municipio") and "Cidade" in sub.columns:
+            return float(len(sub[sub["Cidade"] == regra["municipio"]]))
+        return float(len(sub))
 
-    # Carrega a base financeira da sessão (via importação de planilha) ou vazia
-    if "df_financeiro" in st.session_state:
-        df_fin = st.session_state["df_financeiro"].copy()
+    meses_pt = ["janeiro","fevereiro","março","abril","maio","junho","julho",
+                "agosto","setembro","outubro","novembro","dezembro"]
+    if usa_periodo:
+        legenda_periodo = f"período {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
     else:
-        df_fin = pd.DataFrame(columns=COLUNAS_FIN)
+        legenda_periodo = f"{meses_pt[hoje.month-1]}/{hoje.year}"
 
-    # ── Indicadores gerenciais: regras de pagamento por cliente ──
     st.markdown("#### Regras de pagamento por cliente")
-    st.caption("Parâmetros configuráveis — contagem de audiências, total por município, "
-               "valores acumulados ou outros. Clientes elegíveis recebem o selo Regra atingida.")
+    st.caption(f"Referência: {legenda_periodo}. Parâmetros configuráveis — contagem de audiências, "
+               "total por município, valores acumulados ou outros. Clientes elegíveis recebem o selo Regra atingida.")
 
     if REGRAS_PAGAMENTO:
         cols_ind = st.columns(min(3, len(REGRAS_PAGAMENTO)))
         for i, regra in enumerate(REGRAS_PAGAMENTO):
-            atual = _calcula_metrica(df_fin, regra)
+            atual = calcula_metrica(base_ind, regra)
             meta = float(regra.get("meta", 0) or 0)
             estrito = regra.get("estrito", False)
-            atingida = (atual > meta) if estrito else (atual >= meta) if meta else False
+            atingida = (atual > meta) if estrito else ((atual >= meta) if meta else False)
             pct = int(round((atual / meta) * 100)) if meta else 0
             unidade = regra.get("unidade", "")
             if regra.get("tipo") == "valor":
                 atual_fmt = "R$ " + ("%0.2f" % atual).replace(",", "X").replace(".", ",").replace("X", ".")
                 meta_fmt = "R$ " + ("%0.2f" % meta).replace(",", "X").replace(".", ",").replace("X", ".")
             else:
-                atual_fmt = str(int(atual))
-                meta_fmt = str(int(meta))
+                atual_fmt = str(int(atual)); meta_fmt = str(int(meta))
             cor_borda = COR_DOURADO if atingida else COR_VERMELHO
             cor_barra = "#2E9E5B" if atingida else COR_VERMELHO
             largura = min(100, pct)
-            selo = (f'<span style="background:#2E9E5B;color:#fff;padding:3px 12px;'
-                    f'border-radius:12px;font-size:0.72rem;font-weight:700;">Regra atingida</span>'
+            selo = (f'<span style="background:#2E9E5B;color:#fff;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:700;">Regra atingida</span>'
                     if atingida else
-                    f'<span style="background:#eee;color:#777;padding:3px 12px;'
-                    f'border-radius:12px;font-size:0.72rem;font-weight:600;">Em andamento</span>')
-            ponto = ('<span style="width:12px;height:12px;border-radius:50%;background:#2E9E5B;'
-                     'display:inline-block;"></span>' if atingida else
-                     '<span style="width:12px;height:12px;border-radius:50%;background:#ccc;'
-                     'display:inline-block;"></span>')
+                    f'<span style="background:#eee;color:#777;padding:3px 12px;border-radius:12px;font-size:0.72rem;font-weight:600;">Em andamento</span>')
+            ponto = (f'<span style="width:12px;height:12px;border-radius:50%;background:{"#2E9E5B" if atingida else "#ccc"};display:inline-block;"></span>')
             with cols_ind[i % len(cols_ind)]:
                 st.markdown(
-                    f'<div style="background:#fff;border-left:5px solid {cor_borda};'
-                    f'border-radius:8px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);'
-                    f'margin-bottom:12px;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<strong style="color:{COR_VERMELHO};">{regra["cliente"]}</strong>{ponto}</div>'
+                    f'<div style="background:#fff;border-left:5px solid {cor_borda};border-radius:8px;padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:12px;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="color:{COR_VERMELHO};">{regra["cliente"]}</strong>{ponto}</div>'
                     f'<p style="margin:6px 0 2px;color:#555;font-size:0.82rem;">{regra["descricao"]}</p>'
-                    f'<div style="font-size:1.6rem;font-weight:700;color:{COR_VERMELHO};">'
-                    f'{atual_fmt} <span style="font-size:0.85rem;color:#888;font-weight:400;">/ meta {meta_fmt} {unidade}</span></div>'
-                    f'<div style="background:#eee;border-radius:6px;height:8px;margin:8px 0;">'
-                    f'<div style="width:{largura}%;background:{cor_barra};height:8px;border-radius:6px;"></div></div>'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                    f'<span style="color:#777;font-size:0.78rem;">{pct}% da meta</span>{selo}</div>'
+                    f'<div style="font-size:1.6rem;font-weight:700;color:{COR_VERMELHO};">{atual_fmt} <span style="font-size:0.85rem;color:#888;font-weight:400;">/ meta {meta_fmt} {unidade}</span></div>'
+                    f'<div style="background:#eee;border-radius:6px;height:8px;margin:8px 0;"><div style="width:{largura}%;background:{cor_barra};height:8px;border-radius:6px;"></div></div>'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:#777;font-size:0.78rem;">{pct}% da meta</span>{selo}</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
-    else:
-        st.info("Nenhuma regra de pagamento cadastrada.")
 
     st.markdown("---")
 
-    # ── Importação de dados por planilha (carregamento em massa) ──
+    # ── Importação de planilha (salva no Supabase para pesquisa posterior) ──
     st.markdown("#### Importar planilha de audiências")
     st.caption("Carregamento em massa — arquivos .xlsx ou .csv. A primeira linha deve conter os cabeçalhos das colunas.")
     arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
+
+    # Modelo de planilha para preenchimento posterior
+    COLS_MODELO = ["Data/Hora de Início", "ID", "Natureza", "Número CNJ", "Tipo / Subtipo",
+                   "Descrição", "Responsável pela Audiência", "Valor", "Cliente", "Parte Contrária",
+                   "Modalidade", "Solicitação", "Local", "Cidade", "UF", "Preposto",
+                   "Dados dos Correspondentes", "Classificação do Processo", "Observações",
+                   "Empresa Contratada", "Arquivo de Origem"]
+    buf_modelo = io.BytesIO()
+    pd.DataFrame(columns=COLS_MODELO).to_excel(buf_modelo, index=False, engine="openpyxl")
+    st.download_button("Baixar modelo de planilha", buf_modelo.getvalue(),
+                       "modelo_audiencias.xlsx",
+                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       key="fin_modelo")
+
     if arq_fin is not None:
         try:
             if arq_fin.name.endswith(".csv"):
                 df_novo = pd.read_csv(arq_fin, dtype=str)
             else:
                 df_novo = pd.read_excel(arq_fin, dtype=str)
-            for c in COLUNAS_FIN:
-                if c not in df_novo.columns:
-                    df_novo[c] = ""
-            st.session_state["df_financeiro"] = df_novo
-            df_fin = df_novo.copy()
-            st.success(f"Planilha importada com sucesso — {len(df_novo)} registro(s) carregado(s).")
+            df_novo.columns = [str(c).strip() for c in df_novo.columns]
+
+            # Divide 'Data/Hora de Início' em Data e Hora de Início
+            col_dh = None
+            for c in df_novo.columns:
+                if c.lower().replace(" ", "") in ("data/horadeinício", "data/horadeinicio", "datahoradeinicio"):
+                    col_dh = c
+                    break
+            if col_dh:
+                d_fmt, h_fmt, _ = parte_data(df_novo[col_dh])
+                df_novo["Data"] = d_fmt
+                df_novo["Hora de Início"] = h_fmt
+
+            st.write("Prévia dos dados:")
+            st.dataframe(df_novo.head(10), hide_index=True, use_container_width=True)
+
+            if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
+                registros = []
+                for _, row in df_novo.iterrows():
+                    rec = {}
+                    for rotulo, col_db in MAPA_DB.items():
+                        val = row.get(rotulo)
+                        if col_db == "valor":
+                            v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
+                            rec[col_db] = float(v) if pd.notna(v) else None
+                        else:
+                            rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
+                    registros.append(rec)
+                if registros and insert_audiencias(registros):
+                    st.success(f"{len(registros)} registro(s) importado(s) e salvo(s) com sucesso.")
+                    st.rerun()
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
 
     st.markdown("---")
 
-    # ── Filtros ──
-    st.markdown("#### Lançamentos de audiências")
-    f1, f2, f3, f4 = st.columns(4)
-    filtro_data = f1.text_input("Data", placeholder="dd/mm/aaaa", key="fin_f_data")
-    clientes_opts = ["Todos os clientes"] + (sorted([x for x in df_fin["Cliente"].dropna().unique() if str(x).strip()]) if "Cliente" in df_fin.columns and not df_fin.empty else [])
-    filtro_cliente = f2.selectbox("Cliente", clientes_opts, key="fin_f_cliente")
-    modal_opts = ["Todas as modalidades"] + (sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if "Modalidade" in df_fin.columns and not df_fin.empty else [])
-    filtro_modal = f3.selectbox("Modalidade", modal_opts, key="fin_f_modal")
-    emp_opts = ["Todas as empresas"] + (sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if "Empresa Contratada" in df_fin.columns and not df_fin.empty else [])
-    filtro_emp = f4.selectbox("Empresa Contratada", emp_opts, key="fin_f_emp")
-
+    # ── Tabela de lançamentos com filtros aplicados ──
     dff = df_fin.copy()
     for c in dff.columns:
         if dff[c].dtype == object:
             dff[c] = dff[c].fillna("")
-    if filtro_data and "Data" in dff.columns:
-        dff = dff[dff["Data"].astype(str).str.contains(filtro_data, na=False)]
+    if usa_periodo and "_dt" in dff.columns:
+        ini_ts = pd.Timestamp(data_ini)
+        fim_ts = pd.Timestamp(data_fim) + pd.Timedelta(days=1)
+        dff = dff[(dff["_dt"] >= ini_ts) & (dff["_dt"] < fim_ts)]
     if filtro_cliente != "Todos os clientes" and "Cliente" in dff.columns:
         dff = dff[dff["Cliente"] == filtro_cliente]
     if filtro_modal != "Todas as modalidades" and "Modalidade" in dff.columns:
@@ -590,7 +677,7 @@ elif pagina == "Gestão Financeira":
     st.write(f"**{len(dff)} lançamento(s) encontrado(s)**")
     cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
     if dff.empty:
-        st.info("Nenhum lançamento. Importe uma planilha para visualizar os dados.")
+        st.info("Nenhum lançamento no período/filtros selecionados. Importe uma planilha ou ajuste os filtros.")
     else:
         st.dataframe(dff[cols_exibir], hide_index=True, use_container_width=True)
         buf_fin = io.BytesIO()
