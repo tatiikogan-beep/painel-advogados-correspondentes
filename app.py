@@ -791,6 +791,21 @@ elif pagina == "Gestão Financeira":
         st.info("Nenhum lançamento no período/filtros selecionados. Importe uma planilha ou ajuste os filtros.")
     else:
         st.dataframe(dff[cols_exibir], hide_index=True, use_container_width=True)
+        # Exportação em Excel no padrão inicial (colunas da prévia)
+        cols_export = [c for c in COLS_PREVIA if c in dff.columns]
+        df_export = dff[cols_export].copy()
         buf_fin = io.BytesIO()
-        dff[cols_exibir].to_csv(buf_fin, index=False)
-        st.download_button("Exportar CSV", buf_fin.getvalue(), "gestao_financeira.csv", "text/csv", key="fin_export")
+        with pd.ExcelWriter(buf_fin, engine="xlsxwriter") as writer:
+            df_export.to_excel(writer, index=False, sheet_name="Lançamentos")
+            wb = writer.book
+            ws = writer.sheets["Lançamentos"]
+            fmt_cab = wb.add_format({"bold": True, "bg_color": "#8B1A1A", "font_color": "#FFFFFF", "border": 1, "align": "center", "valign": "vcenter"})
+            for col_idx, nome in enumerate(df_export.columns):
+                ws.write(0, col_idx, nome, fmt_cab)
+                larg = max(len(str(nome)), int(df_export[nome].astype(str).str.len().max() or 0)) + 2
+                ws.set_column(col_idx, col_idx, min(larg, 45))
+            ws.freeze_panes(1, 0)
+        st.download_button("Exportar Excel", buf_fin.getvalue(),
+                           "gestao_financeira.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="fin_export")
