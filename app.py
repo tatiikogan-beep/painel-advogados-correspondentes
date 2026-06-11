@@ -862,7 +862,8 @@ elif pagina == "Gestão Financeira":
     else:
         st.dataframe(dff[cols_exibir], hide_index=True, use_container_width=True)
         # Exportação em Excel no padrão inicial (colunas da prévia)
-        cols_export = [c for c in COLS_PREVIA if c in dff.columns]
+        cols_export_base = ["Data", "Hora de Início"] + [c for c in COLS_PREVIA if c not in ("Data/Hora de Início",)]
+        cols_export = [c for c in cols_export_base if c in dff.columns]
         df_export = dff[cols_export].copy()
         buf_fin = io.BytesIO()
         with pd.ExcelWriter(buf_fin, engine="xlsxwriter") as writer:
