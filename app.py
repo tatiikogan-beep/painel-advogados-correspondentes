@@ -74,7 +74,7 @@ def load_data():
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame()
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def load_audiencias():
     """Carrega audiências salvas no Supabase com paginação (evita limite de 1000)."""
     try:
@@ -263,7 +263,15 @@ if pagina == "Dashboard":
     st.caption(f"Referência: {meses_pt[hoje_d.month-1]}/{hoje_d.year} (mês vigente).")
     qtd_imc = 0
     if not df_aud.empty and "data" in df_aud.columns and "cliente" in df_aud.columns:
-        _dt = pd.to_datetime(df_aud["data"], errors="coerce", dayfirst=True)
+        # Parseia datas no formato ISO (yyyy-mm-dd) ou dd/mm/yyyy de forma robusta
+    def _parse_aud(s):
+        dt = pd.to_datetime(s, errors="coerce", dayfirst=False)
+        falta = dt.isna() & s.notna() & (s.astype(str).str.strip() != "")
+        if falta.any():
+            dt2 = pd.to_datetime(s.where(falta), errors="coerce", dayfirst=True)
+            dt = dt.mask(falta, dt2)
+        return dt
+    _dt = _parse_aud(df_aud["data"])
         _mes = df_aud[(_dt >= pd.Timestamp(ini_mes)) & (_dt < pd.Timestamp(hoje_d) + pd.Timedelta(days=1))]
         _canon = _mes["cliente"].apply(cliente_canonico)
         qtd_imc = int((_canon == "IMC Saste Construções, Serviços e Comércio Ltda.").sum())
@@ -558,7 +566,7 @@ elif pagina == "Gestão Financeira":
         if falta.any():
             dt2 = pd.to_datetime(serie.where(falta), errors="coerce", dayfirst=True)
             dt = dt.fillna(dt2)
-        return dt.dt.strftime("%d/%m/%Y"), dt.dt.strftime("%Hh%M"), dt
+        return dt.dt.strftime("%d/%m/%Y"), dt.dt.strftime("%Hh%M"), dt, dt.dt.strftime("%Y-%m-%d")
 
     def fmt_brl(v):
         return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
@@ -575,7 +583,15 @@ elif pagina == "Gestão Financeira":
         df_fin = pd.DataFrame(columns=COLUNAS_FIN)
 
     if not df_fin.empty:
-        df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
+        # Parseia datas no formato ISO (yyyy-mm-dd) ou dd/mm/yyyy de forma robusta
+    def _parse_data_mista(serie):
+        dt = pd.to_datetime(serie, errors="coerce", dayfirst=False)
+        falta = dt.isna() & serie.notna() & (serie.astype(str).str.strip() != "")
+        if falta.any():
+            dt2 = pd.to_datetime(serie.where(falta), errors="coerce", dayfirst=True)
+            dt = dt.mask(falta, dt2)
+        return dt
+    df_fin["_dt"] = _parse_data_mista(df_fin["Data"])
         df_fin["_cli_canon"] = df_fin["Cliente"].apply(cliente_canonico)
         df_fin["_valor_num"] = pd.to_numeric(df_fin["Valor"], errors="coerce").fillna(0.0)
     else:
@@ -737,9 +753,10 @@ elif pagina == "Gestão Financeira":
                     col_dh = c
                     break
             if col_dh:
-                d_fmt, h_fmt, _ = parte_data(df_novo[col_dh])
+                d_fmt, h_fmt, _, iso_fmt = parte_data(df_novo[col_dh])
                 df_novo["Data"] = d_fmt
                 df_novo["Hora de Início"] = h_fmt
+                df_novo["_data_iso"] = iso_fmt
 
             # ── Conferência e ajuste de inconsistências antes da importação ──
             st.write(f"Prévia e conferência dos dados ({len(df_novo)} linha(s)):")
@@ -817,6 +834,13 @@ elif pagina == "Gestão Financeira":
                         if col_db == "valor":
                             v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
                             rec[col_db] = float(v) if pd.notna(v) else None
+                        elif col_db == "data":
+                            # Usa formato ISO para armazenamento confiável e filtragem
+                            iso_val = row.get("_data_iso")
+                            if pd.notna(iso_val) and str(iso_val).strip() not in ("", "NaT", "nan"):
+                                rec[col_db] = str(iso_val).strip()
+                            else:
+                                rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                         else:
                             rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                     registros.append(rec)
@@ -828,7 +852,7 @@ elif pagina == "Gestão Financeira":
                         lote = registros[i:i+200]
                         try:
                             resp = sb.table("audiencias").insert(lote).execute()
-                            total_ok += len(resp.data) if getattr(resp, "data", None) else len(lote)
+                            total_ok += len(resp.data) if resp.data else 0
                         except Exception as e_lote:
                             erros.append(f"Lote {i}-{i+len(lote)}: {e_lote}")
                     st.cache_data.clear()
