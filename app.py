@@ -55,6 +55,7 @@ st.markdown(f"""
     }}
     .metric-card h3 {{ margin: 0; font-size: 2rem; color: {COR_VERMELHO}; }}
     .metric-card p  {{ margin: 0; font-size: 0.85rem; color: #555; font-weight: 600; }}
+        [data-testid="stSidebar"] .stRadio label p {{ font-size: 1.1rem !important; }}
 </style>
 """, unsafe_allow_html=True)
 
