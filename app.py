@@ -263,15 +263,7 @@ if pagina == "Dashboard":
     st.caption(f"Referência: {meses_pt[hoje_d.month-1]}/{hoje_d.year} (mês vigente).")
     qtd_imc = 0
     if not df_aud.empty and "data" in df_aud.columns and "cliente" in df_aud.columns:
-        # Parseia datas no formato ISO (yyyy-mm-dd) ou dd/mm/yyyy de forma robusta
-    def _parse_aud(s):
-        dt = pd.to_datetime(s, errors="coerce", dayfirst=False)
-        falta = dt.isna() & s.notna() & (s.astype(str).str.strip() != "")
-        if falta.any():
-            dt2 = pd.to_datetime(s.where(falta), errors="coerce", dayfirst=True)
-            dt = dt.mask(falta, dt2)
-        return dt
-    _dt = _parse_aud(df_aud["data"])
+        _dt = pd.to_datetime(df_aud["data"], errors="coerce", dayfirst=True)
         _mes = df_aud[(_dt >= pd.Timestamp(ini_mes)) & (_dt < pd.Timestamp(hoje_d) + pd.Timedelta(days=1))]
         _canon = _mes["cliente"].apply(cliente_canonico)
         qtd_imc = int((_canon == "IMC Saste Construções, Serviços e Comércio Ltda.").sum())
@@ -583,15 +575,7 @@ elif pagina == "Gestão Financeira":
         df_fin = pd.DataFrame(columns=COLUNAS_FIN)
 
     if not df_fin.empty:
-        # Parseia datas no formato ISO (yyyy-mm-dd) ou dd/mm/yyyy de forma robusta
-    def _parse_data_mista(serie):
-        dt = pd.to_datetime(serie, errors="coerce", dayfirst=False)
-        falta = dt.isna() & serie.notna() & (serie.astype(str).str.strip() != "")
-        if falta.any():
-            dt2 = pd.to_datetime(serie.where(falta), errors="coerce", dayfirst=True)
-            dt = dt.mask(falta, dt2)
-        return dt
-    df_fin["_dt"] = _parse_data_mista(df_fin["Data"])
+        df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
         df_fin["_cli_canon"] = df_fin["Cliente"].apply(cliente_canonico)
         df_fin["_valor_num"] = pd.to_numeric(df_fin["Valor"], errors="coerce").fillna(0.0)
     else:
