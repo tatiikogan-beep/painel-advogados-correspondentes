@@ -538,6 +538,7 @@ elif pagina == "Gestão Financeira":
         "Data/Hora de Início", "Natureza", "Tipo / Subtipo",
         "Valor", "Cliente Processo", "Contrário Principal",
         "Cidade", "UF", "Reembolsavel", "Empresa Correspondente",
+        "Observação",
     ]
     MAPA_DB = {
         "Data": "data", "Hora de Início": "hora_inicio", "ID": "id_audiencia",
@@ -773,32 +774,32 @@ elif pagina == "Gestão Financeira":
                     probs.append("UF inválida")
                 return "; ".join(probs)
 
-            df_conf["Inconsistências"] = df_conf.apply(checa_linha, axis=1)
-            n_inconsist = int((df_conf["Inconsistências"] != "").sum())
+            df_conf["⚠️ Conferência"] = df_conf.apply(checa_linha, axis=1)
+            n_inconsist = int((df_conf["⚠️ Conferência"] != "").sum())
 
             if n_inconsist:
                 st.warning(f"{n_inconsist} linha(s) com possíveis inconsistências. "
                            "Corrija na tabela abaixo (ou importe assim mesmo, se preferir).")
                 with st.expander(f"Ver detalhes das {n_inconsist} inconsistência(s)"):
-                    st.dataframe(df_conf.loc[df_conf["Inconsistências"] != "",
-                                             [c for c in cols_conf if c in df_conf.columns] + ["Inconsistências"]],
+                    st.dataframe(df_conf.loc[df_conf["⚠️ Conferência"] != "",
+                                             [c for c in cols_conf if c in df_conf.columns] + ["⚠️ Conferência"]],
                                  hide_index=True, use_container_width=True)
             else:
                 st.success("Nenhuma inconsistência detectada na conferência inicial.")
 
-            cols_editor = [c for c in cols_conf if c in df_conf.columns] + ["Inconsistências"]
+            cols_editor = [c for c in cols_conf if c in df_conf.columns] + ["⚠️ Conferência"]
             df_edit = st.data_editor(
                 df_conf[cols_editor],
                 hide_index=True,
                 use_container_width=True,
                 num_rows="fixed",
-                disabled=["Inconsistências"],
+                disabled=["⚠️ Conferência"],
                 key="fin_editor",
             )
 
             df_final = df_novo.copy()
             for c in cols_editor:
-                if c != "Inconsistências" and c in df_edit.columns:
+                if c != "⚠️ Conferência" and c in df_edit.columns:
                     df_final[c] = df_edit[c].values
 
             restantes = int(df_edit.apply(checa_linha, axis=1).map(lambda s: 1 if s else 0).sum())
