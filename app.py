@@ -574,7 +574,7 @@ elif pagina == "Gestão Financeira":
 
     if not df_fin.empty:
         df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
-        df_fin["_cli_canon"] = df_fin["Cliente"].apply(cliente_canonico)
+        df_fin["_cli_canon"] = df_fin["Cliente Processo"].apply(cliente_canonico)
         df_fin["_valor_num"] = pd.to_numeric(df_fin["Valor"], errors="coerce").fillna(0.0)
     else:
         df_fin["_dt"] = pd.NaT
@@ -614,7 +614,7 @@ elif pagina == "Gestão Financeira":
     if filtro_modal:
         dff = dff[dff["Modalidade"].isin(filtro_modal)]
     if filtro_emp:
-        dff = dff[dff["Empresa Contratada"].isin(filtro_emp)]
+        dff = dff[dff["Empresa Correspondente"].isin(filtro_emp)]
     if filtro_sol:
         dff = dff[dff["Solicitação"].isin(filtro_sol)]
     if filtro_reimb and filtro_reimb != "(Todos)":
@@ -766,7 +766,7 @@ elif pagina == "Gestão Financeira":
                 vtxt = str(vraw or "").strip()
                 if vtxt and pd.isna(pd.to_numeric(pd.Series([vtxt.replace(".", "").replace(",", ".")]), errors="coerce").iloc[0]):
                     probs.append("Valor não numérico")
-                if not str(row.get("Cliente", "") or "").strip():
+                if not str(row.get("Cliente Processo", "") or "").strip():
                     probs.append("Cliente ausente")
                 uf = str(row.get("UF", "") or "").strip().upper()
                 if uf and uf not in UFS_VALIDAS:
