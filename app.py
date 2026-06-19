@@ -529,27 +529,24 @@ elif pagina == "Gestão Financeira":
 
     COLUNAS_FIN = [
         "Data", "Hora de Início", "ID", "Natureza", "Número CNJ",
-        "Tipo / Subtipo", "Descrição", "Responsável pela Audiência", "Valor",
-        "Cliente", "Parte Contrária", "Modalidade", "Solicitação", "Local",
-        "Cidade", "UF", "Preposto", "Dados dos Correspondentes",
-        "Classificação do Processo", "Observações", "Empresa Contratada",
-        "Arquivo de Origem",
+        "Tipo / Subtipo", "Valor", "Cliente Processo", "Contrário Principal",
+        "Modalidade", "Solicitação", "Cidade", "UF",
+        "Reembolsavel", "Empresa Correspondente", "Observação",
     ]
     # Colunas exibidas na prévia da importação (apenas estas)
     COLS_PREVIA = [
         "Data/Hora de Início", "Natureza", "Tipo / Subtipo",
-        "Responsável pela Audiência", "Valor", "Cliente", "Parte Contrária",
-        "Cidade", "UF", "Classificação do Processo", "Empresa Contratada",
+        "Valor", "Cliente Processo", "Contrário Principal",
+        "Cidade", "UF", "Reembolsavel", "Empresa Correspondente",
     ]
     MAPA_DB = {
         "Data": "data", "Hora de Início": "hora_inicio", "ID": "id_audiencia",
         "Natureza": "natureza", "Número CNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
-        "Descrição": "descricao", "Responsável pela Audiência": "responsavel", "Valor": "valor",
-        "Cliente": "cliente", "Parte Contrária": "parte_contraria", "Modalidade": "modalidade",
-        "Solicitação": "solicitacao", "Local": "local", "Cidade": "cidade", "UF": "uf",
-        "Preposto": "preposto", "Dados dos Correspondentes": "dados_correspondentes",
-        "Classificação do Processo": "classificacao_processo", "Observações": "observacoes",
-        "Empresa Contratada": "empresa_contratada", "Arquivo de Origem": "arquivo_origem",
+        "Valor": "valor", "Cliente Processo": "cliente", "Contrário Principal": "parte_contraria",
+        "Modalidade": "modalidade", "Solicitação": "solicitacao",
+        "Cidade": "cidade", "UF": "uf",
+        "Reembolsavel": "reembolsavel", "Empresa Correspondente": "empresa_contratada",
+        "Observação": "observacoes",
     }
 
     def parte_data(serie):
@@ -597,12 +594,11 @@ elif pagina == "Gestão Financeira":
     f4, f5, f6, f7 = st.columns(4)
     modal_opts = sorted([x for x in df_fin["Modalidade"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
     filtro_modal = f4.multiselect("Modalidade", modal_opts, key="fin_f_modal")
-    emp_opts = sorted([x for x in df_fin["Empresa Contratada"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
-    filtro_emp = f5.multiselect("Empresa Contratada", emp_opts, key="fin_f_emp")
+    emp_opts = sorted([x for x in df_fin["Empresa Correspondente"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
+    filtro_emp = f5.multiselect("Empresa Correspondente", emp_opts, key="fin_f_emp")
     sol_opts = sorted([x for x in df_fin["Solicitação"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
     filtro_sol = f6.multiselect("Solicitação", sol_opts, key="fin_f_sol")
-    clas_opts = sorted([x for x in df_fin["Classificação do Processo"].dropna().unique() if str(x).strip()]) if not df_fin.empty else []
-    filtro_clas = f7.multiselect("Classificação do Processo", clas_opts, key="fin_f_clas")
+    filtro_reimb = f7.selectbox("Reembolsavel", ["(Todos)", "Sim", "Não"], key="fin_f_reimb")
 
     # ── Aplica filtros (período sempre ativo; default = mês vigente) ──
     dff = df_fin.copy()
@@ -621,8 +617,8 @@ elif pagina == "Gestão Financeira":
         dff = dff[dff["Empresa Contratada"].isin(filtro_emp)]
     if filtro_sol:
         dff = dff[dff["Solicitação"].isin(filtro_sol)]
-    if filtro_clas:
-        dff = dff[dff["Classificação do Processo"].isin(filtro_clas)]
+    if filtro_reimb and filtro_reimb != "(Todos)":
+        dff = dff[dff["Reembolsavel"].astype(str).str.strip().str.lower() == filtro_reimb.lower()]
 
     # ── Indicadores e gráficos (refletem o filtro de data; default mês vigente) ──
     total_contratado = float(dff["_valor_num"].sum()) if not dff.empty else 0.0
@@ -672,7 +668,7 @@ elif pagina == "Gestão Financeira":
 
         g3, g4 = st.columns(2)
         # Empresa Contratada — por valor contratado
-        ec = dff.groupby("Empresa Contratada")["_valor_num"].sum().reset_index()
+        ec = dff.groupby("Empresa Correspondente")["_valor_num"].sum().reset_index()
         ec.columns = ["Empresa", "Total"]
         ec = ec[(ec["Empresa"].astype(str).str.strip() != "") & (ec["Total"] > 0)].sort_values("Total", ascending=False).head(15)
         if not ec.empty:
@@ -710,10 +706,9 @@ elif pagina == "Gestão Financeira":
     arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
 
     COLS_MODELO = ["Data/Hora de Início", "ID", "Natureza", "Número CNJ", "Tipo / Subtipo",
-                   "Descrição", "Responsável pela Audiência", "Valor", "Cliente", "Parte Contrária",
-                   "Modalidade", "Solicitação", "Local", "Cidade", "UF", "Preposto",
-                   "Dados dos Correspondentes", "Classificação do Processo", "Observações",
-                   "Empresa Contratada", "Arquivo de Origem"]
+                   "Valor", "Cliente Processo", "Contrário Principal",
+                   "Modalidade", "Solicitação", "Cidade", "UF",
+                   "Reembolsavel", "Empresa Correspondente", "Observação"]
     buf_modelo = io.BytesIO()
     pd.DataFrame(columns=COLS_MODELO).to_excel(buf_modelo, index=False, engine="openpyxl")
     st.download_button("Baixar modelo de planilha", buf_modelo.getvalue(),
