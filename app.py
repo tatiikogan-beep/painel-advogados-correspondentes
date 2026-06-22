@@ -542,8 +542,8 @@ elif pagina == "Gestão Financeira":
     ]
     MAPA_DB = {
         "Data": "data", "Hora de Início": "hora_inicio", "ID": "id_audiencia",
-        "Natureza": "natureza", "Número CNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
-        "VALOR": "valor", "Cliente Processo": "cliente", "Contrário Principal": "parte_contraria",
+        "Natureza": "natureza", "NúmerodeCNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
+        "VALOR": "valor", "Cliente Processo": "cliente", "Contrário principal": "parte_contraria",
         "Modalidade": "modalidade", "Solicitação": "solicitacao",
         "Cidade": "cidade", "UF": "uf",
         "Reembolsavel": "reembolsavel", "Empresa Correspondente": "empresa_contratada",
