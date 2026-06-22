@@ -770,8 +770,6 @@ elif pagina == "Gestão Financeira":
                 if not str(row.get("Cliente Processo", "") or "").strip():
                     probs.append("Cliente ausente")
                 uf = str(row.get("UF", "") or "").strip().upper()
-                if uf and uf not in UFS_VALIDAS:
-                    probs.append("UF inválida")
                 return "; ".join(probs)
 
             df_conf["⚠️ Conferência"] = df_conf.apply(checa_linha, axis=1)
