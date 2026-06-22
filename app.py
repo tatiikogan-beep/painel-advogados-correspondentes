@@ -529,14 +529,14 @@ elif pagina == "Gestão Financeira":
 
     COLUNAS_FIN = [
         "Data", "Hora de Início", "ID", "Natureza", "Número CNJ",
-        "Tipo / Subtipo", "Valor", "Cliente Processo", "Contrário Principal",
+        "Tipo / Subtipo", "VALOR", "Cliente Processo", "Contrário Principal",
         "Modalidade", "Solicitação", "Cidade", "UF",
         "Reembolsavel", "Empresa Correspondente", "Observação",
     ]
     # Colunas exibidas na prévia da importação (apenas estas)
     COLS_PREVIA = [
         "Data/Hora de Início", "Natureza", "Tipo / Subtipo",
-        "Valor", "Cliente Processo", "Contrário Principal",
+        "VALOR", "Cliente Processo", "Contrário Principal",
         "Cidade", "UF", "Reembolsavel", "Empresa Correspondente",
         "Observação",
     ]
@@ -707,7 +707,7 @@ elif pagina == "Gestão Financeira":
     arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
 
     COLS_MODELO = ["Data/Hora de Início", "ID", "Natureza", "Número CNJ", "Tipo / Subtipo",
-                   "Valor", "Cliente Processo", "Contrário Principal",
+                   "VALOR", "Cliente Processo", "Contrário Principal",
                    "Modalidade", "Solicitação", "Cidade", "UF",
                    "Reembolsavel", "Empresa Correspondente", "Observação"]
     buf_modelo = io.BytesIO()
@@ -763,7 +763,7 @@ elif pagina == "Gestão Financeira":
                     probs.append("Data ausente")
                 elif pd.isna(pd.to_datetime(dval, format="%d/%m/%Y", errors="coerce")):
                     probs.append("Data inválida")
-                vraw = row.get("Valor")
+                vraw = row.get("VALOR")
                 vtxt = str(vraw or "").strip()
                 if vtxt and pd.isna(pd.to_numeric(pd.Series([vtxt.replace(".", "").replace(",", ".")]), errors="coerce").iloc[0]):
                     probs.append("Valor não numérico")
