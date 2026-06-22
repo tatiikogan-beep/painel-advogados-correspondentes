@@ -576,7 +576,7 @@ elif pagina == "Gestão Financeira":
     if not df_fin.empty:
         df_fin["_dt"] = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
         df_fin["_cli_canon"] = df_fin["Cliente Processo"].apply(cliente_canonico)
-        df_fin["_valor_num"] = pd.to_numeric(df_fin["Valor"], errors="coerce").fillna(0.0)
+        df_fin["_valor_num"] = pd.to_numeric(df_fin["VALOR"], errors="coerce").fillna(0.0)
     else:
         df_fin["_dt"] = pd.NaT
         df_fin["_cli_canon"] = ""
