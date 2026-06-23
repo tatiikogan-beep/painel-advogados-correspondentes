@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import plotly.express as px
 from supabase import create_client, Client
 import io
-import base64
+import base64h
 import os
 
 st.set_page_config(
@@ -89,7 +89,19 @@ def load_audiencias():
             if len(lote) < passo:
                 break
             inicio += passo
-        return pd.DataFrame(todos) if todos else pd.DataFrame()
+        if not todos:
+            return pd.DataFrame()
+        df_raw = pd.DataFrame(todos)
+        if "dados" in df_raw.columns:
+            dados_exp = pd.json_normalize(df_raw["dados"].apply(lambda x: x if isinstance(x, dict) else {}))
+            etiq_col = df_raw["etiqueta_financeira"].copy() if "etiqueta_financeira" in df_raw.columns else None
+            drop_cols = ["dados"] + (["etiqueta_financeira"] if "etiqueta_financeira" in df_raw.columns else [])
+            df_raw = df_raw.drop(columns=drop_cols)
+            for col in dados_exp.columns:
+                df_raw[col] = dados_exp[col].values
+            if etiq_col is not None:
+                df_raw["etiqueta_financeira"] = etiq_col.values
+        return df_raw
     except Exception as e:
         st.error(f"Erro ao carregar audiencias: {e}")
         return pd.DataFrame()
