@@ -144,7 +144,7 @@ def insert_data(record: dict):
 def update_data(record_id: int, fields: dict):
     try:
         sb = get_supabase()
-        sb.table("advogados").update(fields).eq("_chave", record_id).execute()
+        sb.table("advogados").update(fields).eq("id", record_id).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -154,7 +154,7 @@ def update_data(record_id: int, fields: dict):
 def delete_data(record_id: int):
     try:
         sb = get_supabase()
-        sb.table("advogados").delete().eq("_chave", record_id).execute()
+        sb.table("advogados").delete().eq("id", record_id).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -780,7 +780,7 @@ elif pagina == "Gestao Financeira":
                             erros.append(f"Lote {i}-{i+len(lote)}: {e_lote}")
                     st.cache_data.clear()
                     try:
-                        chk = sb.table("audiencias").select("id", count="exact").execute()
+                        chk = sb.table("audiencias").select("_chave", count="exact").execute()
                         total_banco = chk.count if getattr(chk, "count", None) is not None else "?"
                     except Exception:
                         total_banco = "?"
@@ -806,7 +806,7 @@ elif pagina == "Gestao Financeira":
     else:
         cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
         df_edit_fin = dff[cols_exibir].copy()
-        if "id" in dff.columns:
+        if "_chave" in dff.columns:
             df_edit_fin["_id"] = dff["_chave"].values
 
         column_config = {
