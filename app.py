@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import plotly.express as px
 from supabase import create_client, Client
 import io
-import base64h
+import base64
 import os
 
 st.set_page_config(
