@@ -144,7 +144,7 @@ def insert_data(record: dict):
 def update_data(record_id: int, fields: dict):
     try:
         sb = get_supabase()
-        sb.table("advogados").update(fields).eq("id", record_id).execute()
+        sb.table("advogados").update(fields).eq("_chave", record_id).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -154,7 +154,7 @@ def update_data(record_id: int, fields: dict):
 def delete_data(record_id: int):
     try:
         sb = get_supabase()
-        sb.table("advogados").delete().eq("id", record_id).execute()
+        sb.table("advogados").delete().eq("_chave", record_id).execute()
         st.cache_data.clear()
         return True
     except Exception as e:
@@ -807,7 +807,7 @@ elif pagina == "Gestao Financeira":
         cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
         df_edit_fin = dff[cols_exibir].copy()
         if "id" in dff.columns:
-            df_edit_fin["_id"] = dff["id"].values
+            df_edit_fin["_id"] = dff["_chave"].values
 
         column_config = {
             "Etiqueta Financeira": st.column_config.SelectboxColumn(
@@ -847,7 +847,7 @@ elif pagina == "Gestao Financeira":
                         upd_fields[col_db] = str(val).strip() if val and str(val).strip() not in ("", "nan", "NaT") else None
                     else:
                         upd_fields[col_db] = str(val).strip() if val and str(val).strip() not in ("", "nan") else None
-                if update_audiencia(int(id_reg), upd_fields):
+                if update_audiencia(str(id_reg), upd_fields):
                     ok_upd += 1
                 else:
                     erros_upd += 1
