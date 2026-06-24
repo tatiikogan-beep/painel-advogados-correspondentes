@@ -766,6 +766,7 @@ elif pagina == "Gestao Financeira":
                                 rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                         else:
                             rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
+                    rec.pop("etiqueta_financeira", None)
                     registros.append(rec)
                 if registros:
                     sb = get_supabase()
