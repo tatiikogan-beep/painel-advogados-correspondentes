@@ -781,7 +781,7 @@ elif pagina == "Gestao Financeira":
                             erros.append(f"Lote {i}-{i+len(lote)}: {e_lote}")
                     st.cache_data.clear()
                     try:
-                        chk = sb.table("audiencias").select("_chave", count="exact").execute()
+                        chk = sb.table("audiencias").select("id", count="exact").execute()
                         total_banco = chk.count if getattr(chk, "count", None) is not None else "?"
                     except Exception:
                         total_banco = "?"
@@ -789,6 +789,7 @@ elif pagina == "Gestao Financeira":
                         st.error(f"Importados {total_ok} de {len(registros)}. Total no banco: {total_banco}. Erros: " + " | ".join(erros[:3]))
                     else:
                         st.success(f"{total_ok} registro(s) importado(s). Total no banco agora: {total_banco}.")
+                        st.rerun()
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
 
