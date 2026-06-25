@@ -492,7 +492,7 @@ elif pagina == "Gestao Financeira":
     MAPA_DB = {
         "Data": "data", "Hora de Inicio": "hora_inicio", "ID": "id_audiencia",
         "Natureza": "natureza", "Numero CNJ": "numero_cnj", "Tipo / Subtipo": "tipo_subtipo",
-        "VALOR": "valor", "Cliente Processo": "cliente", "Contrario principal": "parte_contraria",
+        "VALOR": "valor", "Cliente Processo": "cliente", "Contrario Principal": "parte_contraria",
         "Modalidade": "modalidade", "Solicitacao": "solicitacao",
         "Cidade": "cidade", "UF": "uf", "Reembolsavel": "reembolsavel",
         "Empresa Correspondente": "empresa_contratada", "Observacao": "observacoes",
@@ -535,8 +535,10 @@ elif pagina == "Gestao Financeira":
     primeiro_dia_mes = hoje.replace(day=1)
     st.markdown("#### Lancamentos de audiencias")
     f1, f2, f3 = st.columns(3)
-    data_ini = f1.date_input("Data inicio", value=primeiro_dia_mes, key="fin_f_ini", format="DD/MM/YYYY")
-    data_fim = f2.date_input("Data fim", value=hoje, key="fin_f_fim", format="DD/MM/YYYY")
+    _data_ini_default = date(2020, 1, 1)
+    _data_fim_default = date(hoje.year + 1, 12, 31)
+    data_ini = f1.date_input("Data inicio", value=_data_ini_default, key="fin_f_ini", format="DD/MM/YYYY")
+    data_fim = f2.date_input("Data fim", value=_data_fim_default, key="fin_f_fim", format="DD/MM/YYYY")
     clientes_canon = sorted([x for x in df_fin["_cli_canon"].dropna().unique() if x]) if not df_fin.empty else []
     filtro_clientes = f3.multiselect("Cliente (um ou mais)", clientes_canon, key="fin_f_cliente")
     f4, f5, f6, f7, f8 = st.columns(5)
@@ -548,6 +550,12 @@ elif pagina == "Gestao Financeira":
     filtro_sol = f6.multiselect("Solicitacao", sol_opts, key="fin_f_sol")
     filtro_reimb = f7.selectbox("Reembolsavel", ["(Todos)", "Sim", "Nao"], key="fin_f_reimb")
     filtro_etiq_fin = f8.selectbox("Etiqueta", ["(Todas)"] + [e for e in ETIQUETAS_FIN if e], key="fin_f_etiq")
+
+    if st.button("\ud83d\udd04 Limpar todos os filtros", key="fin_limpar"):
+        for k in ["fin_f_ini","fin_f_fim","fin_f_cliente","fin_f_modal","fin_f_emp","fin_f_sol","fin_f_reimb","fin_f_etiq"]:
+            if k in st.session_state:
+                del st.session_state[k]
+        st.rerun()
 
     dff = df_fin.copy()
     for c in dff.columns:
@@ -782,9 +790,28 @@ elif pagina == "Gestao Financeira":
                     df_final[c] = df_edit[c].values
             if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
                 registros = []
+                import unicodedata as _ud2
+                def _norm_map(s):
+                    s2 = str(s).strip().lower()
+                    s2 = _ud2.normalize("NFKD", s2)
+                    s2 = "".join(ch for ch in s2 if not _ud2.combining(ch))
+                    return s2.strip()
+                _col_map = {}
+                for col_planilha in df_final.columns:
+                    _col_map[_norm_map(col_planilha)] = col_planilha
+                _mapa_flex = {}
+                for rotulo_db in MAPA_DB.keys():
+                    rotulo_norm = _norm_map(rotulo_db)
+                    if rotulo_db in df_final.columns:
+                        _mapa_flex[rotulo_db] = rotulo_db
+                    elif rotulo_norm in _col_map:
+                        _mapa_flex[rotulo_db] = _col_map[rotulo_norm]
+                    else:
+                        _mapa_flex[rotulo_db] = rotulo_db
                 for _, row in df_final.iterrows():
                     rec = {}
                     for rotulo, col_db in MAPA_DB.items():
+                        rotulo = _mapa_flex.get(rotulo, rotulo)
                         val = row.get(rotulo)
                         if col_db == "valor":
                             v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
