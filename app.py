@@ -551,7 +551,7 @@ elif pagina == "Gestao Financeira":
     filtro_reimb = f7.selectbox("Reembolsavel", ["(Todos)", "Sim", "Nao"], key="fin_f_reimb")
     filtro_etiq_fin = f8.selectbox("Etiqueta", ["(Todas)"] + [e for e in ETIQUETAS_FIN if e], key="fin_f_etiq")
 
-    if st.button("\ud83d\udd04 Limpar todos os filtros", key="fin_limpar"):
+    if st.button("Limpar todos os filtros", key="fin_limpar"):
         for k in ["fin_f_ini","fin_f_fim","fin_f_cliente","fin_f_modal","fin_f_emp","fin_f_sol","fin_f_reimb","fin_f_etiq"]:
             if k in st.session_state:
                 del st.session_state[k]
