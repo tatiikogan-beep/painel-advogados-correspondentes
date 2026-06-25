@@ -562,7 +562,13 @@ elif pagina == "Gestao Financeira":
     if filtro_emp:      dff = dff[dff["Empresa Correspondente"].isin(filtro_emp)]
     if filtro_sol:      dff = dff[dff["Solicitacao"].isin(filtro_sol)]
     if filtro_reimb and filtro_reimb != "(Todos)":
-        dff = dff[dff["Reembolsavel"].astype(str).str.strip().str.lower() == filtro_reimb.lower()]
+        _reimb_norm = filtro_reimb.strip().lower().replace("\u00e3", "a").replace("\u00e3o", "ao")
+        def _norm_reimb(v):
+            s = str(v or "").strip().lower().replace("\u00e3", "a").replace("\u00e3o", "ao")
+            if s in ("none", "nan", "null", ""):
+                return ""
+            return s
+        dff = dff[dff["Reembolsavel"].apply(_norm_reimb) == _reimb_norm]
     if filtro_etiq_fin and filtro_etiq_fin != "(Todas)":
         dff = dff[dff["Etiqueta Financeira"].astype(str).str.strip() == filtro_etiq_fin]
 
@@ -765,7 +771,11 @@ elif pagina == "Gestao Financeira":
             else:
                 st.success("Nenhuma inconsistencia detectada.")
             cols_editor = [c for c in cols_conf if c in df_conf.columns] + ["Conferencia"]
-            df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], key="fin_editor")
+            _conf_col_cfg = {
+                "Reembolsavel": st.column_config.SelectboxColumn(
+                    "Reembolsavel", options=["", "Sim", "Nao"], required=False),
+            }
+            df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], column_config=_conf_col_cfg, key="fin_editor")
             df_final = df_novo.copy()
             for c in cols_editor:
                 if c != "Conferencia" and c in df_edit.columns:
