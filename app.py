@@ -771,6 +771,15 @@ elif pagina == "Gestao Financeira":
                 return "; ".join(probs)
 
             df_conf["Conferencia"] = df_conf.apply(checa_linha, axis=1)
+            # Mostrar colunas identificadas na planilha
+            _colunas_esperadas = list(MAPA_DB.keys())
+            _colunas_encontradas = [c for c in _colunas_esperadas if c in df_novo.columns]
+            _colunas_nao_encontradas = [c for c in _colunas_esperadas if c not in df_novo.columns]
+            if _colunas_nao_encontradas:
+                with st.expander(f"{len(_colunas_nao_encontradas)} coluna(s) nao encontradas diretamente (mapeamento flexivel sera usado):"):
+                    st.write("Colunas da planilha: " + ", ".join(list(df_novo.columns)))
+                    st.write("Nao encontradas: " + ", ".join(_colunas_nao_encontradas))
+
             n_inconsist = int((df_conf["Conferencia"] != "").sum())
             if n_inconsist:
                 st.warning(f"{n_inconsist} linha(s) com possiveis inconsistencias.")
@@ -800,6 +809,12 @@ elif pagina == "Gestao Financeira":
                 for col_planilha in df_final.columns:
                     _col_map[_norm_map(col_planilha)] = col_planilha
                 _mapa_flex = {}
+                # Mapeamento de sinonimos para colunas especiais
+                _SINONIMOS = {
+                    "Numero CNJ": ["numero cnj", "numero do processo", "processo", "n processo", "num processo", "numerocnj", "numerodoproc"],
+                    "UF": ["uf", "estado", "uf estado", "estado uf"],
+                    "Contrario Principal": ["contrario principal", "parte contraria", "contrario", "reu", "parte reu", "parte adversa"],
+                }
                 for rotulo_db in MAPA_DB.keys():
                     rotulo_norm = _norm_map(rotulo_db)
                     if rotulo_db in df_final.columns:
@@ -807,7 +822,23 @@ elif pagina == "Gestao Financeira":
                     elif rotulo_norm in _col_map:
                         _mapa_flex[rotulo_db] = _col_map[rotulo_norm]
                     else:
-                        _mapa_flex[rotulo_db] = rotulo_db
+                        # Tentar sinonimos
+                        encontrado = False
+                        if rotulo_db in _SINONIMOS:
+                            for sin in _SINONIMOS[rotulo_db]:
+                                if sin in _col_map:
+                                    _mapa_flex[rotulo_db] = _col_map[sin]
+                                    encontrado = True
+                                    break
+                        if not encontrado:
+                            # Busca parcial: verificar se alguma coluna da planilha contem a chave normalizada
+                            for col_norm_k, col_orig_v in _col_map.items():
+                                if rotulo_norm in col_norm_k or col_norm_k in rotulo_norm:
+                                    _mapa_flex[rotulo_db] = col_orig_v
+                                    encontrado = True
+                                    break
+                        if not encontrado:
+                            _mapa_flex[rotulo_db] = rotulo_db
                 for _, row in df_final.iterrows():
                     rec = {}
                     for rotulo, col_db in MAPA_DB.items():
