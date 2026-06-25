@@ -4,7 +4,7 @@ from datetime import datetime, date, timedelta
 import plotly.express as px
 from supabase import create_client, Client
 import io
-import base64
+import base64h
 import os
 
 st.set_page_config(
@@ -703,16 +703,37 @@ elif pagina == "Gestao Financeira":
                 aba = "Consolidado" if "Consolidado" in xls.sheet_names else xls.sheet_names[0]
                 df_novo = pd.read_excel(xls, sheet_name=aba, dtype=str)
             df_novo.columns = [str(c).strip() for c in df_novo.columns]
+            import unicodedata as _ud
+            def _norm_col(s):
+                s2 = str(s).strip().lower()
+                s2 = _ud.normalize("NFKD", s2)
+                s2 = "".join(ch for ch in s2 if not _ud.combining(ch))
+                return s2.replace(" ", "").replace("/", "").replace("-", "")
+            _DATAS_ACEITAS = {
+                "datahorainicio", "datahora", "datainicio", "data",
+                "dataaudiencia", "datadaaudiencia",
+            }
             col_dh = None
             for c in df_novo.columns:
-                if c.lower().replace(" ", "") in ("data/horadeinicio",):
+                if _norm_col(c) in _DATAS_ACEITAS:
                     col_dh = c
                     break
+            if col_dh is None:
+                for c in df_novo.columns:
+                    if _norm_col(c).startswith("data"):
+                        col_dh = c
+                        break
             if col_dh:
                 d_fmt, h_fmt, _, iso_fmt = parte_data(df_novo[col_dh])
                 df_novo["Data"] = d_fmt
                 df_novo["Hora de Inicio"] = h_fmt
                 df_novo["_data_iso"] = iso_fmt
+            else:
+                _data_cols_found = [c for c in df_novo.columns if "data" in _norm_col(c)]
+                if _data_cols_found:
+                    st.warning(f"Coluna de data nao reconhecida automaticamente. Encontradas: {_data_cols_found}. Renomeie para 'Data/Hora de Inicio'.")
+                else:
+                    st.warning("Nenhuma coluna de data encontrada na planilha. Adicione uma coluna 'Data/Hora de Inicio'.")
             st.write(f"Previa e conferencia dos dados ({len(df_novo)} linha(s)):")
             st.caption("Revise abaixo. Voce pode corrigir qualquer celula diretamente na tabela antes de importar.")
             cols_conf = [c for c in COLS_PREVIA if c in df_novo.columns]
