@@ -551,10 +551,16 @@ elif pagina == "Gestao Financeira":
     filtro_reimb = f7.selectbox("Reembolsavel", ["(Todos)", "Sim", "Nao"], key="fin_f_reimb")
     filtro_etiq_fin = f8.selectbox("Etiqueta", ["(Todas)"] + [e for e in ETIQUETAS_FIN if e], key="fin_f_etiq")
 
-    if st.button("Limpar todos os filtros", key="fin_limpar"):
-        for k in ["fin_f_ini","fin_f_fim","fin_f_cliente","fin_f_modal","fin_f_emp","fin_f_sol","fin_f_reimb","fin_f_etiq"]:
-            if k in st.session_state:
-                del st.session_state[k]
+    def _limpar_filtros_fin():
+        for _k in ["fin_f_cliente","fin_f_modal","fin_f_emp","fin_f_sol"]:
+            st.session_state[_k] = []
+        st.session_state["fin_f_reimb"] = "(Todos)"
+        st.session_state["fin_f_etiq"] = "(Todas)"
+        st.session_state["fin_f_ini"] = _data_ini_default
+        st.session_state["fin_f_fim"] = _data_fim_default
+    st.button("Limpar todos os filtros", key="fin_limpar", on_click=_limpar_filtros_fin)
+    if st.button("Atualizar dados (recarregar do banco)", key="fin_refresh"):
+        st.cache_data.clear()
         st.rerun()
 
     dff = df_fin.copy()
@@ -908,8 +914,10 @@ elif pagina == "Gestao Financeira":
     else:
         cols_exibir = [c for c in COLUNAS_FIN if c in dff.columns]
         df_edit_fin = dff[cols_exibir].copy()
-        if "_chave" in dff.columns:
-            df_edit_fin["_id"] = dff["_chave"].values
+        if "id" in dff.columns:
+            df_edit_fin["_id"] = dff["id"].values
+        elif "ID" in dff.columns:
+            df_edit_fin["_id"] = dff["ID"].values
 
         column_config = {
             "Etiqueta Financeira": st.column_config.SelectboxColumn(
