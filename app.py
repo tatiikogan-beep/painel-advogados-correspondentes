@@ -570,7 +570,7 @@ elif pagina == "Gestao Financeira":
             return s
         dff = dff[dff["Reembolsavel"].apply(_norm_reimb) == _reimb_norm]
     if filtro_etiq_fin and filtro_etiq_fin != "(Todas)":
-        dff = dff[dff["Etiqueta Financeira"].astype(str).str.strip() == filtro_etiq_fin]
+        dff = dff[dff["Etiqueta Financeira"].astype(str).str.strip().str.lower() == filtro_etiq_fin.strip().lower()]
 
     total_contratado = float(dff["_valor_num"].sum()) if not dff.empty else 0.0
     qtd_lanc = len(dff)
@@ -797,7 +797,6 @@ elif pagina == "Gestao Financeira":
                                 rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                         else:
                             rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
-                    rec.pop("etiqueta_financeira", None)
                     registros.append(rec)
                 if registros:
                     sb = get_supabase()
