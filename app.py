@@ -801,9 +801,11 @@ elif pagina == "Gestao Financeira":
                 registros = []
                 import unicodedata as _ud2
                 def _norm_map(s):
+                    import re as _re2
                     s2 = str(s).strip().lower()
                     s2 = _ud2.normalize("NFKD", s2)
                     s2 = "".join(ch for ch in s2 if not _ud2.combining(ch))
+                    s2 = _re2.sub(r"[^a-z0-9]+", "", s2)
                     return s2.strip()
                 _col_map = {}
                 for col_planilha in df_final.columns:
@@ -811,9 +813,11 @@ elif pagina == "Gestao Financeira":
                 _mapa_flex = {}
                 # Mapeamento de sinonimos para colunas especiais
                 _SINONIMOS = {
-                    "Numero CNJ": ["numero cnj", "numero do processo", "processo", "n processo", "num processo", "numerocnj", "numerodoproc"],
-                    "UF": ["uf", "estado", "uf estado", "estado uf"],
-                    "Contrario Principal": ["contrario principal", "parte contraria", "contrario", "reu", "parte reu", "parte adversa"],
+                    "Numero CNJ": ["numerodecnj", "numerocnj", "numerodoproc", "numerodoprocesso", "numerodoprocessocnj", "processo", "nprocesso", "numcnj", "cnj"],
+                    "UF": ["uf", "estado", "ufestado", "estadouf"],
+                    "Contrario Principal": ["contrarioprincipal", "partecontraria", "contrario", "reu", "parteadversa", "partescontrarias", "contrariodaacao"],
+                    "Solicitacao": ["solicitacao", "solicitacoes", "tiposolicitacao"],
+                    "Observacao": ["observacao", "observacoes", "obs"],
                 }
                 for rotulo_db in MAPA_DB.keys():
                     rotulo_norm = _norm_map(rotulo_db)
@@ -854,7 +858,15 @@ elif pagina == "Gestao Financeira":
                             else:
                                 rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
                         else:
-                            rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
+                            v_str = str(val).strip() if pd.notna(val) and str(val).strip() else None
+                            if col_db == "reembolsavel" and v_str:
+                                import unicodedata as _udn
+                                _rv = "".join(c for c in _udn.normalize("NFKD", v_str.lower()) if not _udn.combining(c))
+                                if _rv in ("sim", "s", "yes", "y", "1", "true"):
+                                    v_str = "Sim"
+                                elif _rv in ("nao", "n", "no", "0", "false"):
+                                    v_str = "Nao"
+                            rec[col_db] = v_str
                     registros.append(rec)
                 if registros:
                     sb = get_supabase()
@@ -948,7 +960,7 @@ elif pagina == "Gestao Financeira":
                 st.warning(f"{erros_upd} registro(s) nao puderam ser atualizados.")
 
     # Exportacao com logo
-    cols_export_base = ["Data", "Hora de Inicio"] + [c for c in COLS_PREVIA if c not in ("Data/Hora de Inicio",)] + ["Etiqueta Financeira"]
+    cols_export_base = ["Data", "Hora de Inicio", "Numero CNJ"] + [c for c in COLS_PREVIA if c not in ("Data/Hora de Inicio", "Numero CNJ")] + ["Etiqueta Financeira"]
     cols_export = [c for c in cols_export_base if c in dff.columns]
     df_export = dff[cols_export].copy() if not dff.empty else pd.DataFrame(columns=cols_export)
     buf_fin = io.BytesIO()
