@@ -420,66 +420,166 @@ elif pagina == "Gestao de Correspondentes (teste)":
                 dff = dff[dff.apply(_tem_alguma_tag, axis=1)]
             st.write(f"**{len(dff)} registro(s) encontrado(s)**")
 
-            # Tabela de consulta: passe o mouse sobre o nome para ver o card de contato
+            # Consulta com card de contato (hover no nome) - abre sozinha ao pesquisar por nome
             import html as _html
             def _campo_card(v):
                 v = str(v or "").strip()
                 return _html.escape(v) if v and v.lower() not in ("nan", "none", "null") else "Nao informado"
-            st.caption("Passe o mouse sobre o nome para ver o card com OAB, e-mail e telefone (textos copiaveis).")
-            _css_hover = (
-                '<style>'
-                '.gc-tabela{width:100%;border-collapse:collapse;font-size:13px}'
-                '.gc-tabela th,.gc-tabela td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left;vertical-align:top;word-break:break-word}'
-                '.gc-tabela th{background:#f5f5f5;font-weight:600}'
-                '.gc-tabela tr:hover{background:#fafafa}'
-                '.gc-nome{position:relative;color:#8B1A1A;font-weight:600;cursor:default}'
-                '.gc-card{display:none;position:absolute;left:0;top:100%;z-index:999;background:#fff;'
-                'border:1px solid #ddd;border-left:4px solid #C8A951;border-radius:8px;'
-                'box-shadow:0 6px 18px rgba(0,0,0,0.18);padding:12px 16px;min-width:280px;max-width:420px;'
-                'user-select:text;color:#333;font-weight:400}'
-                '.gc-nome:hover .gc-card{display:block}'
-                '.gc-card p{margin:3px 0;font-size:12.5px}'
-                '.gc-card .rotulo{color:#8B1A1A;font-weight:700;margin-right:6px}'
-                '.gc-chip{display:inline-block;color:#fff;padding:2px 10px;border-radius:10px;'
-                'font-size:11.5px;font-weight:600;margin:1px 3px 1px 0;white-space:nowrap}'
-                '</style>'
-            )
-            _linhas_html = ""
-            for _, row in dff.iterrows():
-                nome_txt = _html.escape(str(row.get("nome", "") or ""))
-                card = (f'<div class="gc-card">'
-                        f'<p><span class="rotulo">Nome:</span>{_campo_card(row.get("nome"))}</p>'
-                        f'<p><span class="rotulo">OAB:</span>{_campo_card(row.get("oab"))}</p>'
-                        f'<p><span class="rotulo">E-mail:</span>{_campo_card(row.get("email"))}</p>'
-                        f'<p><span class="rotulo">Telefone:</span>{_campo_card(row.get("telefone"))}</p>'
-                        f'</div>')
-                chips = ""
-                _tags_row = _split_tags(row.get("etiquetas"))
-                legado = str(row.get("etiqueta", "") or "").strip()
-                if legado and legado.lower() not in ("nan", "none") and legado not in _tags_row:
-                    _tags_row.append(legado)
-                for t in _tags_row:
-                    cor_t = cores_tags.get(t) or ETIQUETAS_CORES.get(t, "#888888")
-                    chips += f'<span class="gc-chip" style="background:{cor_t};">{_html.escape(t)}</span>'
-                _linhas_html += (
-                    f'<tr>'
-                    f'<td><span class="gc-nome">{nome_txt}{card}</span></td>'
-                    f'<td>{_html.escape(str(row.get("cidade", "") or ""))}</td>'
-                    f'<td>{_html.escape(str(row.get("estado", "") or ""))}</td>'
-                    f'<td>{_html.escape(str(row.get("telefone", "") or ""))}</td>'
-                    f'<td>{_html.escape(str(row.get("email", "") or ""))}</td>'
-                    f'<td>{_html.escape(str(row.get("empresa", "") or ""))}</td>'
-                    f'<td>{chips}</td>'
-                    f'</tr>'
+            with st.expander("Consulta com card de contato (passe o mouse sobre o nome)",
+                             expanded=bool(gc_f_nome)):
+                st.caption("Passe o mouse sobre o nome para ver o card com OAB, e-mail e telefone (textos copiaveis).")
+                _css_hover = (
+                    '<style>'
+                    '.gc-tabela{width:100%;border-collapse:collapse;font-size:13px}'
+                    '.gc-tabela th,.gc-tabela td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left;vertical-align:top;word-break:break-word}'
+                    '.gc-tabela th{background:#f5f5f5;font-weight:600}'
+                    '.gc-tabela tr:hover{background:#fafafa}'
+                    '.gc-nome{position:relative;color:#8B1A1A;font-weight:600;cursor:default}'
+                    '.gc-card{display:none;position:absolute;left:0;top:100%;z-index:999;background:#fff;'
+                    'border:1px solid #ddd;border-left:4px solid #C8A951;border-radius:8px;'
+                    'box-shadow:0 6px 18px rgba(0,0,0,0.18);padding:12px 16px;min-width:280px;max-width:420px;'
+                    'user-select:text;color:#333;font-weight:400}'
+                    '.gc-nome:hover .gc-card{display:block}'
+                    '.gc-card p{margin:3px 0;font-size:12.5px}'
+                    '.gc-card .rotulo{color:#8B1A1A;font-weight:700;margin-right:6px}'
+                    '.gc-chip{display:inline-block;color:#fff;padding:2px 10px;border-radius:10px;'
+                    'font-size:11.5px;font-weight:600;margin:1px 3px 1px 0;white-space:nowrap}'
+                    '</style>'
                 )
-            st.markdown(
-                _css_hover
-                + '<table class="gc-tabela"><thead><tr>'
-                  '<th>Nome</th><th>Cidade</th><th>Estado</th><th>Telefone</th>'
-                  '<th>E-mail</th><th>Empresa</th><th>Etiquetas</th>'
-                  '</tr></thead><tbody>' + _linhas_html + '</tbody></table>',
-                unsafe_allow_html=True,
+                _linhas_html = ""
+                for _, row in dff.iterrows():
+                    nome_txt = _html.escape(str(row.get("nome", "") or ""))
+                    card = (f'<div class="gc-card">'
+                            f'<p><span class="rotulo">Nome:</span>{_campo_card(row.get("nome"))}</p>'
+                            f'<p><span class="rotulo">OAB:</span>{_campo_card(row.get("oab"))}</p>'
+                            f'<p><span class="rotulo">E-mail:</span>{_campo_card(row.get("email"))}</p>'
+                            f'<p><span class="rotulo">Telefone:</span>{_campo_card(row.get("telefone"))}</p>'
+                            f'</div>')
+                    chips = ""
+                    _tags_row = _split_tags(row.get("etiquetas"))
+                    legado = str(row.get("etiqueta", "") or "").strip()
+                    if legado and legado.lower() not in ("nan", "none") and legado not in _tags_row:
+                        _tags_row.append(legado)
+                    for t in _tags_row:
+                        cor_t = cores_tags.get(t) or ETIQUETAS_CORES.get(t, "#888888")
+                        chips += f'<span class="gc-chip" style="background:{cor_t};">{_html.escape(t)}</span>'
+                    _linhas_html += (
+                        f'<tr>'
+                        f'<td><span class="gc-nome">{nome_txt}{card}</span></td>'
+                        f'<td>{_html.escape(str(row.get("oab", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("telefone", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("email", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("cidade", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("estado", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("empresa", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("cliente", "") or ""))}</td>'
+                        f'<td>{_html.escape(str(row.get("tipo", "") or ""))}</td>'
+                        f'<td>{chips}</td>'
+                        f'</tr>'
+                    )
+                st.markdown(
+                    _css_hover
+                    + '<table class="gc-tabela"><thead><tr>'
+                      '<th>Nome</th><th>OAB</th><th>Telefone</th><th>E-mail</th><th>Cidade</th>'
+                      '<th>Estado</th><th>Empresa</th><th>Cliente</th><th>Tipo</th><th>Etiquetas</th>'
+                      '</tr></thead><tbody>' + _linhas_html + '</tbody></table>',
+                    unsafe_allow_html=True,
+                )
+
+            # Tabela principal (editavel) - todas as colunas
+            st.caption("Edite as celulas diretamente na tabela e clique em 'Gravar edicoes'. "
+                       "Para excluir, marque a coluna 'Excluir' e use o botao de exclusao abaixo.")
+            GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
+            if db_tem_email:
+                GC_COLS_DB.insert(2, "email")
+            if db_tem_tags:
+                GC_COLS_DB.append("etiquetas")
+            gc_cols_edit = [c for c in GC_COLS_DB if c in dff.columns]
+            df_gc_edit = dff[gc_cols_edit].copy()
+            df_gc_edit.insert(0, "Excluir", False)
+            df_gc_edit["_id"] = dff["id"].values if "id" in dff.columns else None
+
+            gc_col_cfg = {
+                "Excluir": st.column_config.CheckboxColumn("Excluir", default=False,
+                                                            help="Marque para excluir este registro"),
+                "estado": st.column_config.SelectboxColumn("estado", options=ESTADOS, required=False),
+                "tipo": st.column_config.SelectboxColumn("tipo", options=TIPOS, required=False),
+                "etiqueta": st.column_config.SelectboxColumn("etiqueta", options=ETIQUETAS, required=False),
+                "etiquetas": st.column_config.TextColumn("etiquetas",
+                                                          help="Varias etiquetas separadas por ';' - prefira usar 'Atribuir etiquetas' abaixo"),
+                "_id": st.column_config.Column("ID", disabled=True),
+            }
+            df_gc_editado = st.data_editor(
+                df_gc_edit, hide_index=True, use_container_width=True,
+                num_rows="fixed", column_config=gc_col_cfg, key="gc_reg_editor",
             )
+
+            b1, b2 = st.columns([1, 2])
+            if b1.button(
+                "Gravar edicoes feitas na tabela",
+                type="primary",
+                key="gc_save_edits",
+                help="Grava no banco de dados as celulas que voce alterou diretamente na tabela acima.",
+            ):
+                ok_upd = 0
+                erros_upd = 0
+                for idx in range(len(df_gc_editado)):
+                    row_orig = df_gc_edit.iloc[idx]
+                    row_edit = df_gc_editado.iloc[idx]
+                    if bool(row_edit.get("Excluir")):
+                        continue
+                    changed = any(str(row_orig.get(c, "")) != str(row_edit.get(c, "")) for c in gc_cols_edit)
+                    if not changed:
+                        continue
+                    id_reg = row_edit.get("_id")
+                    if id_reg is None or pd.isna(id_reg):
+                        erros_upd += 1
+                        continue
+                    if not str(row_edit.get("nome", "") or "").strip():
+                        erros_upd += 1
+                        continue
+                    upd = {}
+                    for c in gc_cols_edit:
+                        v = row_edit.get(c)
+                        upd[c] = str(v).strip() if v is not None and str(v).strip() not in ("", "nan", "None") else None
+                    if update_data(id_reg, upd):
+                        ok_upd += 1
+                    else:
+                        erros_upd += 1
+                if ok_upd:
+                    st.success(f"{ok_upd} registro(s) atualizado(s) com sucesso!")
+                    st.cache_data.clear()
+                    st.rerun()
+                elif not erros_upd:
+                    st.info("Nenhuma alteracao para gravar.")
+                if erros_upd:
+                    st.warning(f"{erros_upd} registro(s) nao puderam ser atualizados (verifique se o Nome esta preenchido).")
+
+            gc_marcados = df_gc_editado[df_gc_editado["Excluir"] == True] if "Excluir" in df_gc_editado.columns else pd.DataFrame()
+            if len(gc_marcados) > 0:
+                b2.warning(f"{len(gc_marcados)} registro(s) marcado(s) para exclusao: "
+                           + ", ".join(str(n) for n in gc_marcados.get("nome", pd.Series(dtype=str)).head(5))
+                           + ("..." if len(gc_marcados) > 5 else ""))
+                gc_conf_del = st.checkbox("Sim, desejo excluir os registros marcados (acao definitiva)", key="gc_conf_del")
+                if st.button(f"Excluir {len(gc_marcados)} registro(s) marcado(s)", disabled=not gc_conf_del,
+                             type="primary", key="gc_btn_del_sel"):
+                    ok_del = 0
+                    erros_del = 0
+                    for _, row_del in gc_marcados.iterrows():
+                        id_reg = row_del.get("_id")
+                        if id_reg is None or pd.isna(id_reg):
+                            erros_del += 1
+                            continue
+                        if delete_data(id_reg):
+                            ok_del += 1
+                        else:
+                            erros_del += 1
+                    if ok_del:
+                        st.success(f"{ok_del} registro(s) excluido(s)!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    if erros_del:
+                        st.warning(f"{erros_del} registro(s) nao puderam ser excluidos.")
 
             # Atribuir etiquetas
             st.markdown("")
@@ -559,102 +659,6 @@ elif pagina == "Gestao de Correspondentes (teste)":
                                 st.success(f"Etiqueta '{tag_sel_nome}' excluida!")
                                 st.rerun()
 
-            st.markdown("---")
-            st.markdown("##### Editar ou excluir registros")
-            st.caption("Edite as celulas diretamente na tabela e clique em 'Gravar edicoes'. "
-                       "Para excluir, marque a coluna 'Excluir' e use o botao de exclusao abaixo.")
-
-            GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
-            if db_tem_email:
-                GC_COLS_DB.insert(2, "email")
-            if db_tem_tags:
-                GC_COLS_DB.append("etiquetas")
-            gc_cols_edit = [c for c in GC_COLS_DB if c in dff.columns]
-            df_gc_edit = dff[gc_cols_edit].copy()
-            df_gc_edit.insert(0, "Excluir", False)
-            df_gc_edit["_id"] = dff["id"].values if "id" in dff.columns else None
-
-            gc_col_cfg = {
-                "Excluir": st.column_config.CheckboxColumn("Excluir", default=False,
-                                                            help="Marque para excluir este registro"),
-                "estado": st.column_config.SelectboxColumn("estado", options=ESTADOS, required=False),
-                "tipo": st.column_config.SelectboxColumn("tipo", options=TIPOS, required=False),
-                "etiqueta": st.column_config.SelectboxColumn("etiqueta", options=ETIQUETAS, required=False),
-                "etiquetas": st.column_config.TextColumn("etiquetas",
-                                                          help="Varias etiquetas separadas por ';' - prefira usar 'Atribuir etiquetas' acima"),
-                "_id": st.column_config.Column("ID", disabled=True),
-            }
-            df_gc_editado = st.data_editor(
-                df_gc_edit, hide_index=True, use_container_width=True,
-                num_rows="fixed", column_config=gc_col_cfg, key="gc_reg_editor",
-            )
-
-            b1, b2 = st.columns([1, 2])
-            if b1.button(
-                "Gravar edicoes feitas na tabela",
-                type="primary",
-                key="gc_save_edits",
-                help="Grava no banco de dados as celulas que voce alterou diretamente na tabela acima.",
-            ):
-                ok_upd = 0
-                erros_upd = 0
-                for idx in range(len(df_gc_editado)):
-                    row_orig = df_gc_edit.iloc[idx]
-                    row_edit = df_gc_editado.iloc[idx]
-                    if bool(row_edit.get("Excluir")):
-                        continue
-                    changed = any(str(row_orig.get(c, "")) != str(row_edit.get(c, "")) for c in gc_cols_edit)
-                    if not changed:
-                        continue
-                    id_reg = row_edit.get("_id")
-                    if id_reg is None or pd.isna(id_reg):
-                        erros_upd += 1
-                        continue
-                    if not str(row_edit.get("nome", "") or "").strip():
-                        erros_upd += 1
-                        continue
-                    upd = {}
-                    for c in gc_cols_edit:
-                        v = row_edit.get(c)
-                        upd[c] = str(v).strip() if v is not None and str(v).strip() not in ("", "nan", "None") else None
-                    if update_data(id_reg, upd):
-                        ok_upd += 1
-                    else:
-                        erros_upd += 1
-                if ok_upd:
-                    st.success(f"{ok_upd} registro(s) atualizado(s) com sucesso!")
-                    st.cache_data.clear()
-                    st.rerun()
-                elif not erros_upd:
-                    st.info("Nenhuma alteracao para gravar.")
-                if erros_upd:
-                    st.warning(f"{erros_upd} registro(s) nao puderam ser atualizados (verifique se o Nome esta preenchido).")
-
-            gc_marcados = df_gc_editado[df_gc_editado["Excluir"] == True] if "Excluir" in df_gc_editado.columns else pd.DataFrame()
-            if len(gc_marcados) > 0:
-                b2.warning(f"{len(gc_marcados)} registro(s) marcado(s) para exclusao: "
-                           + ", ".join(str(n) for n in gc_marcados.get("nome", pd.Series(dtype=str)).head(5))
-                           + ("..." if len(gc_marcados) > 5 else ""))
-                gc_conf_del = st.checkbox("Sim, desejo excluir os registros marcados (acao definitiva)", key="gc_conf_del")
-                if st.button(f"Excluir {len(gc_marcados)} registro(s) marcado(s)", disabled=not gc_conf_del,
-                             type="primary", key="gc_btn_del_sel"):
-                    ok_del = 0
-                    erros_del = 0
-                    for _, row_del in gc_marcados.iterrows():
-                        id_reg = row_del.get("_id")
-                        if id_reg is None or pd.isna(id_reg):
-                            erros_del += 1
-                            continue
-                        if delete_data(id_reg):
-                            ok_del += 1
-                        else:
-                            erros_del += 1
-                    if ok_del:
-                        st.success(f"{ok_del} registro(s) excluido(s)!")
-                        st.cache_data.clear()
-                        st.rerun()
-                    if erros_del:
-                        st.warning(f"{erros_del} registro(s) nao puderam ser excluidos.")
 
             buf = io.BytesIO()
             dff.to_csv(buf, index=False)
