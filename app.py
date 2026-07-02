@@ -334,11 +334,12 @@ if pagina == "Dashboard":
 elif pagina == "Gestao de Correspondentes (teste)":
     st.subheader("Gestao de Correspondentes")
     st.caption("Versao de teste - reune tudo em uma unica tela: a aba Registros permite consultar, "
-               "editar e excluir; Cadastrar e Importar Planilha completam o fluxo. "
-               "As abas antigas continuam funcionando normalmente ate esta versao ser aprovada.")
+               "editar e excluir; a aba Cadastro e Importacao concentra o cadastro manual e a "
+               "importacao de planilhas. As abas antigas continuam funcionando normalmente ate "
+               "esta versao ser aprovada.")
 
-    gc_tab_reg, gc_tab_cad, gc_tab_imp = st.tabs(
-        ["Registros", "Cadastrar", "Importar Planilha"])
+    gc_tab_reg, gc_tab_cad = st.tabs(
+        ["Registros", "Cadastro e Importacao"])
 
     # --- Sub-aba: Registros (com edicao e exclusao direto na tabela) ---
     with gc_tab_reg:
@@ -453,39 +454,41 @@ elif pagina == "Gestao de Correspondentes (teste)":
             dff.to_csv(buf, index=False)
             st.download_button("Exportar CSV", buf.getvalue(), "correspondentes.csv", "text/csv", key="gc_export_csv")
 
-    # --- Sub-aba: Cadastrar ---
+    # --- Sub-aba: Cadastro e Importacao ---
     with gc_tab_cad:
-        with st.form("gc_form_cadastro"):
-            c1, c2 = st.columns(2)
-            nome      = c1.text_input("Nome *", key="gc_cad_nome")
-            oab       = c2.text_input("OAB", key="gc_cad_oab")
-            telefone  = c1.text_input("Telefone", key="gc_cad_telefone")
-            cidade    = c2.text_input("Cidade", key="gc_cad_cidade")
-            estado    = c1.selectbox("Estado", ESTADOS, key="gc_cad_estado")
-            empresa   = c2.text_input("Empresa", key="gc_cad_empresa")
-            cliente   = c1.text_input("Cliente", key="gc_cad_cliente")
-            tipo      = c2.selectbox("Tipo de Servico", TIPOS, key="gc_cad_tipo")
-            data_srv  = c1.date_input("Data do Servico", value=date.today(), key="gc_cad_data")
-            pagamento = c2.text_input("Pagamento (R$)", key="gc_cad_pagamento")
-            obs       = st.text_area("Observacoes", height=80, key="gc_cad_obs")
-            etiqueta  = st.selectbox("Etiqueta", ETIQUETAS, key="gc_cad_etiqueta")
-            if etiqueta:
-                cor = ETIQUETAS_CORES.get(etiqueta, "#cccccc")
-                st.markdown(f'<div style="display:inline-block;background:{cor};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta}</div>', unsafe_allow_html=True)
-            enviado = st.form_submit_button("Salvar", use_container_width=True)
-        if enviado:
-            if not nome:
-                st.error("O campo Nome e obrigatorio.")
-            else:
-                rec = {"nome": nome, "oab": oab or None, "telefone": telefone or None,
-                       "cidade": cidade or None, "estado": estado or None, "empresa": empresa or None,
-                       "cliente": cliente or None, "tipo": tipo or None, "data": str(data_srv),
-                       "pagamento": pagamento or None, "obs": obs or None, "etiqueta": etiqueta or None}
-                if insert_data(rec):
-                    st.success("Correspondente cadastrado!")
+        st.markdown("#### Cadastrar correspondente manualmente")
+        with st.expander("Clique para abrir o formulario de cadastro", expanded=False):
+            with st.form("gc_form_cadastro"):
+                c1, c2 = st.columns(2)
+                nome      = c1.text_input("Nome *", key="gc_cad_nome")
+                oab       = c2.text_input("OAB", key="gc_cad_oab")
+                telefone  = c1.text_input("Telefone", key="gc_cad_telefone")
+                cidade    = c2.text_input("Cidade", key="gc_cad_cidade")
+                estado    = c1.selectbox("Estado", ESTADOS, key="gc_cad_estado")
+                empresa   = c2.text_input("Empresa", key="gc_cad_empresa")
+                cliente   = c1.text_input("Cliente", key="gc_cad_cliente")
+                tipo      = c2.selectbox("Tipo de Servico", TIPOS, key="gc_cad_tipo")
+                data_srv  = c1.date_input("Data do Servico", value=date.today(), key="gc_cad_data")
+                pagamento = c2.text_input("Pagamento (R$)", key="gc_cad_pagamento")
+                obs       = st.text_area("Observacoes", height=80, key="gc_cad_obs")
+                etiqueta  = st.selectbox("Etiqueta", ETIQUETAS, key="gc_cad_etiqueta")
+                if etiqueta:
+                    cor = ETIQUETAS_CORES.get(etiqueta, "#cccccc")
+                    st.markdown(f'<div style="display:inline-block;background:{cor};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta}</div>', unsafe_allow_html=True)
+                enviado = st.form_submit_button("Salvar", use_container_width=True)
+            if enviado:
+                if not nome:
+                    st.error("O campo Nome e obrigatorio.")
+                else:
+                    rec = {"nome": nome, "oab": oab or None, "telefone": telefone or None,
+                           "cidade": cidade or None, "estado": estado or None, "empresa": empresa or None,
+                           "cliente": cliente or None, "tipo": tipo or None, "data": str(data_srv),
+                           "pagamento": pagamento or None, "obs": obs or None, "etiqueta": etiqueta or None}
+                    if insert_data(rec):
+                        st.success("Correspondente cadastrado!")
 
-    # --- Sub-aba: Importar Planilha ---
-    with gc_tab_imp:
+        st.markdown("---")
+        st.markdown("#### Importar planilha de correspondentes")
         st.info("""**Formato esperado da planilha (CSV ou Excel):**\n\n| nome | oab | telefone | cidade | estado | empresa | cliente | tipo | data | pagamento | obs |\n|------|-----|----------|--------|--------|---------|---------|------|------|-----------|-----|\n\n- A coluna **nome** e obrigatoria.\n- Datas no formato **YYYY-MM-DD** (ex.: 2024-05-20).\n""")
         modelo_csv = "nome,oab,telefone,cidade,estado,empresa,cliente,tipo,data,pagamento,obs\n"
         modelo_csv += "Joao Silva,OAB/SP 12345,(11)99999-0000,Sao Paulo,SP,Empresa A,Cliente X,Audiencia,2024-05-20,500.00,Observacao\n"
