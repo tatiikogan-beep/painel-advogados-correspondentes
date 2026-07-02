@@ -333,13 +333,14 @@ if pagina == "Dashboard":
 # Cadastro
 elif pagina == "Gestao de Correspondentes (teste)":
     st.subheader("Gestao de Correspondentes")
-    st.caption("Versao de teste - reune Registros, Cadastro, Importacao e Edicao/Exclusao em uma unica tela. "
+    st.caption("Versao de teste - reune tudo em uma unica tela: a aba Registros permite consultar, "
+               "editar e excluir; Cadastrar e Importar Planilha completam o fluxo. "
                "As abas antigas continuam funcionando normalmente ate esta versao ser aprovada.")
 
-    gc_tab_reg, gc_tab_cad, gc_tab_imp, gc_tab_edit = st.tabs(
-        ["Registros", "Cadastrar", "Importar Planilha", "Editar/Excluir"])
+    gc_tab_reg, gc_tab_cad, gc_tab_imp = st.tabs(
+        ["Registros", "Cadastrar", "Importar Planilha"])
 
-    # --- Sub-aba: Registros ---
+    # --- Sub-aba: Registros (com edicao e exclusao direto na tabela) ---
     with gc_tab_reg:
         df = load_data()
         if df.empty:
@@ -359,19 +360,95 @@ elif pagina == "Gestao de Correspondentes (teste)":
             if gc_f_cidade:   dff = dff[dff["cidade"].str.contains(gc_f_cidade, case=False, na=False)]
             if gc_f_etiqueta: dff = dff[dff["etiqueta"] == gc_f_etiqueta]
             st.write(f"**{len(dff)} registro(s) encontrado(s)**")
-            display_cols = [c for c in ["id","nome","oab","telefone","cidade","estado","empresa","cliente","tipo"] if c in dff.columns]
-            header_html = "".join(f"<th>{c}</th>" for c in display_cols) + "<th>etiqueta</th>"
-            rows_html = ""
-            for _, row in dff.iterrows():
-                cells = "".join(f"<td>{row.get(c,'')}</td>" for c in display_cols)
-                etiq = str(row.get("etiqueta","") or "").strip()
-                etiq = "" if etiq.lower() in ("nan", "none", "null") else etiq
-                cor = ETIQUETAS_CORES.get(etiq, "#cccccc")
-                etiq_html = (f'<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:50%;background:{cor};display:inline-block;flex-shrink:0;"></span>{etiq}</span>' if etiq else "")
-                rows_html += f"<tr>{cells}<td>{etiq_html}</td></tr>"
-            table_html = ('<style>.etiq-table{width:100%;border-collapse:collapse;font-size:13px}.etiq-table th,.etiq-table td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left}.etiq-table th{background:#f5f5f5;font-weight:600}.etiq-table tr:hover{background:#fafafa}</style>'
-                          f'<div style="overflow-x:auto;"><table class="etiq-table"><thead><tr>{header_html}</tr></thead><tbody>{rows_html}</tbody></table></div>')
-            st.markdown(table_html, unsafe_allow_html=True)
+            st.caption("Edite as celulas diretamente na tabela e clique em 'Gravar edicoes'. "
+                       "Para excluir, marque a coluna 'Excluir' e use o botao de exclusao abaixo.")
+
+            GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
+            gc_cols_edit = [c for c in GC_COLS_DB if c in dff.columns]
+            df_gc_edit = dff[gc_cols_edit].copy()
+            df_gc_edit.insert(0, "Excluir", False)
+            df_gc_edit["_id"] = dff["id"].values if "id" in dff.columns else None
+
+            gc_col_cfg = {
+                "Excluir": st.column_config.CheckboxColumn("Excluir", default=False,
+                                                            help="Marque para excluir este registro"),
+                "estado": st.column_config.SelectboxColumn("estado", options=ESTADOS, required=False),
+                "tipo": st.column_config.SelectboxColumn("tipo", options=TIPOS, required=False),
+                "etiqueta": st.column_config.SelectboxColumn("etiqueta", options=ETIQUETAS, required=False),
+                "_id": st.column_config.Column("ID", disabled=True),
+            }
+            df_gc_editado = st.data_editor(
+                df_gc_edit, hide_index=True, use_container_width=True,
+                num_rows="fixed", column_config=gc_col_cfg, key="gc_reg_editor",
+            )
+
+            b1, b2 = st.columns([1, 2])
+            if b1.button(
+                "Gravar edicoes feitas na tabela",
+                type="primary",
+                key="gc_save_edits",
+                help="Grava no banco de dados as celulas que voce alterou diretamente na tabela acima.",
+            ):
+                ok_upd = 0
+                erros_upd = 0
+                for idx in range(len(df_gc_editado)):
+                    row_orig = df_gc_edit.iloc[idx]
+                    row_edit = df_gc_editado.iloc[idx]
+                    if bool(row_edit.get("Excluir")):
+                        continue
+                    changed = any(str(row_orig.get(c, "")) != str(row_edit.get(c, "")) for c in gc_cols_edit)
+                    if not changed:
+                        continue
+                    id_reg = row_edit.get("_id")
+                    if id_reg is None or pd.isna(id_reg):
+                        erros_upd += 1
+                        continue
+                    if not str(row_edit.get("nome", "") or "").strip():
+                        erros_upd += 1
+                        continue
+                    upd = {}
+                    for c in gc_cols_edit:
+                        v = row_edit.get(c)
+                        upd[c] = str(v).strip() if v is not None and str(v).strip() not in ("", "nan", "None") else None
+                    if update_data(id_reg, upd):
+                        ok_upd += 1
+                    else:
+                        erros_upd += 1
+                if ok_upd:
+                    st.success(f"{ok_upd} registro(s) atualizado(s) com sucesso!")
+                    st.cache_data.clear()
+                    st.rerun()
+                elif not erros_upd:
+                    st.info("Nenhuma alteracao para gravar.")
+                if erros_upd:
+                    st.warning(f"{erros_upd} registro(s) nao puderam ser atualizados (verifique se o Nome esta preenchido).")
+
+            gc_marcados = df_gc_editado[df_gc_editado["Excluir"] == True] if "Excluir" in df_gc_editado.columns else pd.DataFrame()
+            if len(gc_marcados) > 0:
+                b2.warning(f"{len(gc_marcados)} registro(s) marcado(s) para exclusao: "
+                           + ", ".join(str(n) for n in gc_marcados.get("nome", pd.Series(dtype=str)).head(5))
+                           + ("..." if len(gc_marcados) > 5 else ""))
+                gc_conf_del = st.checkbox("Sim, desejo excluir os registros marcados (acao definitiva)", key="gc_conf_del")
+                if st.button(f"Excluir {len(gc_marcados)} registro(s) marcado(s)", disabled=not gc_conf_del,
+                             type="primary", key="gc_btn_del_sel"):
+                    ok_del = 0
+                    erros_del = 0
+                    for _, row_del in gc_marcados.iterrows():
+                        id_reg = row_del.get("_id")
+                        if id_reg is None or pd.isna(id_reg):
+                            erros_del += 1
+                            continue
+                        if delete_data(id_reg):
+                            ok_del += 1
+                        else:
+                            erros_del += 1
+                    if ok_del:
+                        st.success(f"{ok_del} registro(s) excluido(s)!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    if erros_del:
+                        st.warning(f"{erros_del} registro(s) nao puderam ser excluidos.")
+
             buf = io.BytesIO()
             dff.to_csv(buf, index=False)
             st.download_button("Exportar CSV", buf.getvalue(), "correspondentes.csv", "text/csv", key="gc_export_csv")
@@ -445,64 +522,6 @@ elif pagina == "Gestao de Correspondentes (teste)":
                             st.success("Todos os registros importados!")
             except Exception as e:
                 st.error(f"Erro ao processar arquivo: {e}")
-
-    # --- Sub-aba: Editar/Excluir ---
-    with gc_tab_edit:
-        df = load_data()
-        if df.empty:
-            st.info("Nenhum registro para editar.")
-        else:
-            opcoes = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in df.iterrows()}
-            sel = st.selectbox("Selecionar registro", list(opcoes.keys()), key="gc_edit_sel")
-            reg_id = opcoes[sel]
-            reg = df[df["id"] == reg_id].iloc[0].to_dict()
-            gc_sub_editar, gc_sub_excluir = st.tabs(["Editar", "Excluir"])
-            with gc_sub_editar:
-                with st.form("gc_form_editar"):
-                    e1, e2 = st.columns(2)
-                    nome_e      = e1.text_input("Nome *", value=reg.get("nome",""))
-                    oab_e       = e2.text_input("OAB", value=reg.get("oab","") or "")
-                    telefone_e  = e1.text_input("Telefone", value=reg.get("telefone","") or "")
-                    cidade_e    = e2.text_input("Cidade", value=reg.get("cidade","") or "")
-                    est_idx     = ESTADOS.index(reg.get("estado","")) if reg.get("estado") in ESTADOS else 0
-                    estado_e    = e1.selectbox("Estado", ESTADOS, index=est_idx)
-                    empresa_e   = e2.text_input("Empresa", value=reg.get("empresa","") or "")
-                    cliente_e   = e1.text_input("Cliente", value=reg.get("cliente","") or "")
-                    tipo_idx    = TIPOS.index(reg.get("tipo","")) if reg.get("tipo") in TIPOS else 0
-                    tipo_e      = e2.selectbox("Tipo de Servico", TIPOS, index=tipo_idx)
-                    try:
-                        data_val = date.fromisoformat(str(reg.get("data","")))
-                    except Exception:
-                        data_val = date.today()
-                    data_e      = e1.date_input("Data do Servico", value=data_val)
-                    pagamento_e = e2.text_input("Pagamento", value=reg.get("pagamento","") or "")
-                    obs_e       = st.text_area("Observacoes", value=reg.get("obs","") or "", height=80)
-                    etiqueta_idx_e = ETIQUETAS.index(reg.get("etiqueta","")) if reg.get("etiqueta") in ETIQUETAS else 0
-                    etiqueta_e  = st.selectbox("Etiqueta", ETIQUETAS, index=etiqueta_idx_e)
-                    if etiqueta_e:
-                        cor_e = ETIQUETAS_CORES.get(etiqueta_e, "#cccccc")
-                        st.markdown(f'<div style="display:inline-block;background:{cor_e};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta_e}</div>', unsafe_allow_html=True)
-                    salvar = st.form_submit_button("Salvar Alteracoes", use_container_width=True)
-                if salvar:
-                    if not nome_e:
-                        st.error("O campo Nome e obrigatorio.")
-                    else:
-                        upd = {"nome": nome_e, "oab": oab_e if oab_e else None, "telefone": telefone_e if telefone_e else None,
-                               "cidade": cidade_e if cidade_e else None, "estado": estado_e if estado_e else None,
-                               "empresa": empresa_e if empresa_e else None, "cliente": cliente_e if cliente_e else None,
-                               "data": str(data_e), "tipo": tipo_e if tipo_e else None,
-                               "pagamento": pagamento_e if pagamento_e else None, "obs": obs_e if obs_e else None,
-                               "etiqueta": etiqueta_e if etiqueta_e else None}
-                        if update_data(reg_id, upd):
-                            st.success("Registro atualizado!")
-                            st.cache_data.clear()
-            with gc_sub_excluir:
-                st.warning(f"Voce esta prestes a excluir o registro de **{reg.get('nome','')}**.")
-                confirmar = st.checkbox("Sim, desejo excluir este registro", key="gc_confirm_del")
-                if st.button("Excluir Registro", disabled=not confirmar, type="primary", key="gc_btn_del"):
-                    if delete_data(reg_id):
-                        st.success("Registro excluido!")
-                        st.cache_data.clear()
 
 elif pagina == "Cadastro":
     st.subheader("Cadastrar Correspondente")
