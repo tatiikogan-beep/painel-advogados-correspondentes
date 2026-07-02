@@ -57,6 +57,17 @@ st.markdown(f"""
 .metric-card h3 {{ margin: 0; font-size: 2rem; color: {COR_VERMELHO}; }}
 .metric-card p  {{ margin: 0; font-size: 0.85rem; color: #555; font-weight: 600; }}
 [data-testid="stSidebar"] .stRadio label p {{ font-size: 1.1rem !important; }}
+/* Reduz o espaco em branco no topo do menu lateral, aproximando a
+   navegacao do logotipo e aumentando a area util para o conteudo. */
+[data-testid="stSidebarUserContent"] {{
+    padding-top: 1.2rem !important;
+}}
+section[data-testid="stSidebar"] > div:first-child {{
+    padding-top: 1.2rem !important;
+}}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{
+    gap: 0.35rem !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -287,23 +298,23 @@ ETIQUETAS_FIN_CORES = {
 logo_b64 = get_logo_b64()
 if logo_b64:
     st.sidebar.markdown(
-        f'<div style="text-align:center;padding:10px 0 20px;">'
-        f'<img src="data:image/png;base64,{logo_b64}" style="width:140px;border-radius:8px;"></div>',
+        f'<div style="text-align:center;padding:0 0 6px;">'
+        f'<img src="data:image/png;base64,{logo_b64}" style="width:110px;border-radius:8px;"></div>',
         unsafe_allow_html=True
     )
 else:
     st.sidebar.markdown(
-        f'<div style="text-align:center;padding:10px 0;color:{COR_DOURADO};'
+        f'<div style="text-align:center;padding:0 0 6px;color:{COR_DOURADO};'
         f'font-size:1.2rem;font-weight:700;">IG Advogados</div>',
         unsafe_allow_html=True
     )
 
 st.sidebar.markdown(f'<p style="color:{COR_DOURADO};font-size:0.75rem;text-align:center;'
-                    f'margin-bottom:16px;">Advogados Correspondentes</p>', unsafe_allow_html=True)
+                    f'margin-bottom:8px;">Advogados Correspondentes</p>', unsafe_allow_html=True)
 
-PAGINAS = ["Dashboard", "Gestao de Correspondentes (teste)", "Cadastro", "Importar Planilha", "Registros", "Editar/Excluir", "Gestao Financeira"]
+PAGINAS = ["Gestao de Correspondentes", "Gestao Financeira"]
 st.sidebar.markdown('<p style="font-size:0.7rem;color:rgba(255,255,255,0.5);'
-                    'margin-bottom:4px;">NAVEGACAO</p>', unsafe_allow_html=True)
+                    'margin-bottom:2px;">NAVEGACAO</p>', unsafe_allow_html=True)
 pagina = st.sidebar.radio("NAVEGACAO", PAGINAS, label_visibility="collapsed")
 
 if logo_b64:
@@ -327,29 +338,8 @@ else:
         unsafe_allow_html=True
     )
 
-# Dashboard
-if pagina == "Dashboard":
-    df = load_data()
-    total      = len(df)
-    municipios = df["cidade"].nunique() if "cidade" in df.columns and not df.empty else 0
-    ufs        = df["estado"].nunique() if "estado" in df.columns and not df.empty else 0
-    empresas   = df["empresa"].nunique() if "empresa" in df.columns and not df.empty else 0
-    c1, c2, c3, c4 = st.columns(4)
-    for col, val, label in [
-        (c1, total,     "Total Correspondentes"),
-        (c2, municipios,"Municipios Atendidos"),
-        (c3, ufs,       "UFs Atendidas"),
-        (c4, empresas,  "Empresas"),
-    ]:
-        col.markdown(f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>', unsafe_allow_html=True)
-    if df.empty:
-        st.info("Nenhum dado cadastrado ainda.")
-# Cadastro
-elif pagina == "Gestao de Correspondentes (teste)":
+if pagina == "Gestao de Correspondentes":
     st.subheader("Gestao de Correspondentes")
-    st.caption("Versao de teste - reune tudo em uma unica tela: os indicadores do painel, "
-               "a aba Registros (consultar, editar e excluir) e a aba Cadastro e Importacao. "
-               "As abas antigas continuam funcionando normalmente ate esta versao ser aprovada.")
 
     df_gc = load_data()
 
@@ -795,174 +785,6 @@ elif pagina == "Gestao de Correspondentes (teste)":
             except Exception as e:
                 st.error(f"Erro ao processar arquivo: {e}")
 
-elif pagina == "Cadastro":
-    st.subheader("Cadastrar Correspondente")
-    with st.form("form_cadastro"):
-        c1, c2 = st.columns(2)
-        nome      = c1.text_input("Nome *")
-        oab       = c2.text_input("OAB")
-        telefone  = c1.text_input("Telefone")
-        cidade    = c2.text_input("Cidade")
-        estado    = c1.selectbox("Estado", ESTADOS)
-        empresa   = c2.text_input("Empresa")
-        cliente   = c1.text_input("Cliente")
-        tipo      = c2.selectbox("Tipo de Servico", TIPOS)
-        data_srv  = c1.date_input("Data do Servico", value=date.today())
-        pagamento = c2.text_input("Pagamento (R$)")
-        obs       = st.text_area("Observacoes", height=80)
-        etiqueta  = st.selectbox("Etiqueta", ETIQUETAS)
-        if etiqueta:
-            cor = ETIQUETAS_CORES.get(etiqueta, "#cccccc")
-            st.markdown(f'<div style="display:inline-block;background:{cor};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta}</div>', unsafe_allow_html=True)
-        enviado = st.form_submit_button("Salvar", use_container_width=True)
-    if enviado:
-        if not nome:
-            st.error("O campo Nome e obrigatorio.")
-        else:
-            rec = {"nome": nome, "oab": oab or None, "telefone": telefone or None,
-                   "cidade": cidade or None, "estado": estado or None, "empresa": empresa or None,
-                   "cliente": cliente or None, "tipo": tipo or None, "data": str(data_srv),
-                   "pagamento": pagamento or None, "obs": obs or None, "etiqueta": etiqueta or None}
-            if insert_data(rec):
-                st.success("Correspondente cadastrado!")
-
-# Importar Planilha
-elif pagina == "Importar Planilha":
-    st.subheader("Importacao em Lote")
-    st.info("""**Formato esperado da planilha (CSV ou Excel):**\n\n| nome | oab | telefone | cidade | estado | empresa | cliente | tipo | data | pagamento | obs |\n|------|-----|----------|--------|--------|---------|---------|------|------|-----------|-----|\n\n- A coluna **nome** e obrigatoria.\n- Datas no formato **YYYY-MM-DD** (ex.: 2024-05-20).\n""")
-    modelo_csv = "nome,oab,telefone,cidade,estado,empresa,cliente,tipo,data,pagamento,obs\n"
-    modelo_csv += "Joao Silva,OAB/SP 12345,(11)99999-0000,Sao Paulo,SP,Empresa A,Cliente X,Audiencia,2024-05-20,500.00,Observacao\n"
-    st.download_button(label="Baixar modelo CSV", data=modelo_csv, file_name="modelo_correspondentes.csv", mime="text/csv")
-    arquivo = st.file_uploader("Enviar planilha", type=["csv", "xlsx", "xls"])
-    if arquivo:
-        try:
-            if arquivo.name.endswith(".csv"):
-                df_imp = pd.read_csv(arquivo)
-            else:
-                df_imp = pd.read_excel(arquivo)
-            st.write("Previa dos dados:")
-            st.dataframe(df_imp.head(10), hide_index=True)
-            COLS = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
-            missing = [c for c in ["nome"] if c not in df_imp.columns]
-            if missing:
-                st.error(f"Coluna obrigatoria ausente: {missing}")
-            else:
-                for col in COLS:
-                    if col not in df_imp.columns:
-                        df_imp[col] = None
-                if st.button("Importar todos os registros", type="primary"):
-                    erros = 0
-                    for _, row in df_imp.iterrows():
-                        rec = {c: (str(row[c]) if pd.notna(row.get(c)) else None) for c in COLS}
-                        if not rec.get("nome"):
-                            erros += 1
-                            continue
-                        if not insert_data(rec):
-                            erros += 1
-                    if erros:
-                        st.warning(f"Importacao concluida com {erros} erro(s).")
-                    else:
-                        st.success("Todos os registros importados!")
-        except Exception as e:
-            st.error(f"Erro ao processar arquivo: {e}")
-
-# Registros
-elif pagina == "Registros":
-    st.subheader("Registros Cadastrados")
-    df = load_data()
-    if df.empty:
-        st.info("Nenhum registro encontrado.")
-    else:
-        col1, col2, col3, col4 = st.columns(4)
-        filtro_nome     = col1.text_input("Buscar por Nome")
-        filtro_estado   = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:])
-        filtro_cidade   = col3.text_input("Filtrar por Cidade")
-        filtro_etiqueta = col4.selectbox("Filtrar por Etiqueta", [""] + [e for e in ETIQUETAS if e])
-        dff = df.copy()
-        for col in dff.columns:
-            if dff[col].dtype == object:
-                dff[col] = dff[col].fillna("")
-        if filtro_nome:   dff = dff[dff["nome"].str.contains(filtro_nome, case=False, na=False)]
-        if filtro_estado: dff = dff[dff["estado"] == filtro_estado]
-        if filtro_cidade: dff = dff[dff["cidade"].str.contains(filtro_cidade, case=False, na=False)]
-        if filtro_etiqueta: dff = dff[dff["etiqueta"] == filtro_etiqueta]
-        st.write(f"**{len(dff)} registro(s) encontrado(s)**")
-        display_cols = [c for c in ["id","nome","oab","telefone","cidade","estado","empresa","cliente","tipo"] if c in dff.columns]
-        header_html = "".join(f"<th>{c}</th>" for c in display_cols) + "<th>etiqueta</th>"
-        rows_html = ""
-        for _, row in dff.iterrows():
-            cells = "".join(f"<td>{row.get(c,'')}</td>" for c in display_cols)
-            etiq = str(row.get("etiqueta","") or "").strip()
-            etiq = "" if etiq.lower() in ("nan", "none", "null") else etiq
-            cor = ETIQUETAS_CORES.get(etiq, "#cccccc")
-            etiq_html = (f'<span style="display:inline-flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:50%;background:{cor};display:inline-block;flex-shrink:0;"></span>{etiq}</span>' if etiq else "")
-            rows_html += f"<tr>{cells}<td>{etiq_html}</td></tr>"
-        table_html = ('<style>.etiq-table{width:100%;border-collapse:collapse;font-size:13px}.etiq-table th,.etiq-table td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left}.etiq-table th{background:#f5f5f5;font-weight:600}.etiq-table tr:hover{background:#fafafa}</style>'
-                      f'<div style="overflow-x:auto;"><table class="etiq-table"><thead><tr>{header_html}</tr></thead><tbody>{rows_html}</tbody></table></div>')
-        st.markdown(table_html, unsafe_allow_html=True)
-        buf = io.BytesIO()
-        dff.to_csv(buf, index=False)
-        st.download_button("Exportar CSV", buf.getvalue(), "correspondentes.csv", "text/csv")
-
-# Editar/Excluir
-elif pagina == "Editar/Excluir":
-    st.subheader("Editar ou Excluir Registro")
-    df = load_data()
-    if df.empty:
-        st.info("Nenhum registro para editar.")
-    else:
-        opcoes = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in df.iterrows()}
-        sel = st.selectbox("Selecionar registro", list(opcoes.keys()))
-        reg_id = opcoes[sel]
-        reg = df[df["id"] == reg_id].iloc[0].to_dict()
-        tab_editar, tab_excluir = st.tabs(["Editar", "Excluir"])
-        with tab_editar:
-            with st.form("form_editar"):
-                e1, e2 = st.columns(2)
-                nome_e      = e1.text_input("Nome *", value=reg.get("nome",""))
-                oab_e       = e2.text_input("OAB", value=reg.get("oab","") or "")
-                telefone_e  = e1.text_input("Telefone", value=reg.get("telefone","") or "")
-                cidade_e    = e2.text_input("Cidade", value=reg.get("cidade","") or "")
-                est_idx     = ESTADOS.index(reg.get("estado","")) if reg.get("estado") in ESTADOS else 0
-                estado_e    = e1.selectbox("Estado", ESTADOS, index=est_idx)
-                empresa_e   = e2.text_input("Empresa", value=reg.get("empresa","") or "")
-                cliente_e   = e1.text_input("Cliente", value=reg.get("cliente","") or "")
-                tipo_idx    = TIPOS.index(reg.get("tipo","")) if reg.get("tipo") in TIPOS else 0
-                tipo_e      = e2.selectbox("Tipo de Servico", TIPOS, index=tipo_idx)
-                try:
-                    data_val = date.fromisoformat(str(reg.get("data","")))
-                except Exception:
-                    data_val = date.today()
-                data_e      = e1.date_input("Data do Servico", value=data_val)
-                pagamento_e = e2.text_input("Pagamento", value=reg.get("pagamento","") or "")
-                obs_e       = st.text_area("Observacoes", value=reg.get("obs","") or "", height=80)
-                etiqueta_idx_e = ETIQUETAS.index(reg.get("etiqueta","")) if reg.get("etiqueta") in ETIQUETAS else 0
-                etiqueta_e  = st.selectbox("Etiqueta", ETIQUETAS, index=etiqueta_idx_e)
-                if etiqueta_e:
-                    cor_e = ETIQUETAS_CORES.get(etiqueta_e, "#cccccc")
-                    st.markdown(f'<div style="display:inline-block;background:{cor_e};color:white;padding:4px 14px;border-radius:12px;font-weight:600;">{etiqueta_e}</div>', unsafe_allow_html=True)
-                salvar = st.form_submit_button("Salvar Alteracoes", use_container_width=True)
-            if salvar:
-                if not nome_e:
-                    st.error("O campo Nome e obrigatorio.")
-                else:
-                    upd = {"nome": nome_e, "oab": oab_e if oab_e else None, "telefone": telefone_e if telefone_e else None,
-                           "cidade": cidade_e if cidade_e else None, "estado": estado_e if estado_e else None,
-                           "empresa": empresa_e if empresa_e else None, "cliente": cliente_e if cliente_e else None,
-                           "data": str(data_e), "tipo": tipo_e if tipo_e else None,
-                           "pagamento": pagamento_e if pagamento_e else None, "obs": obs_e if obs_e else None,
-                           "etiqueta": etiqueta_e if etiqueta_e else None}
-                    if update_data(reg_id, upd):
-                        st.success("Registro atualizado!")
-                        st.cache_data.clear()
-        with tab_excluir:
-            st.warning(f"Voce esta prestes a excluir o registro de **{reg.get('nome','')}**.")
-            confirmar = st.checkbox("Sim, desejo excluir este registro", key="confirm_del")
-            if st.button("Excluir Registro", disabled=not confirmar, type="primary", key="btn_del"):
-                if delete_data(reg_id):
-                    st.success("Registro excluido!")
-                    st.cache_data.clear()
-# Gestao Financeira
 elif pagina == "Gestao Financeira":
     st.subheader("Gestao Financeira de Audiencias")
 
