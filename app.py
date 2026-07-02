@@ -374,12 +374,21 @@ elif pagina == "Gestao de Correspondentes (teste)":
                            if str(e).strip() and str(e).strip().lower() not in ("nan", "none")})
     opcoes_tags_gc = sorted(set(lista_tags_reg) | set(tags_usadas) | set(etiq_legadas))
 
+    _CAMPOS_BUSCA_GC = ["nome", "oab", "telefone", "email", "cidade", "estado",
+                        "empresa", "cliente", "tipo", "obs"]
+    def _bate_busca_geral(row, termo_norm):
+        campos = " ".join(str(row.get(c) or "") for c in _CAMPOS_BUSCA_GC)
+        tags_txt = " ".join(_split_tags(row.get("etiquetas")) + [str(row.get("etiqueta") or "")])
+        return termo_norm in _normaliza_txt(campos + " " + tags_txt)
+
     def _aplica_filtros_gc(df_base, f_nome, f_estado, f_cidade, f_tags):
         dfx = df_base.copy()
         for col in dfx.columns:
             if dfx[col].dtype == object:
                 dfx[col] = dfx[col].fillna("")
-        if f_nome:   dfx = dfx[dfx["nome"].str.contains(f_nome, case=False, na=False)]
+        if f_nome:
+            _termo = _normaliza_txt(f_nome)
+            dfx = dfx[dfx.apply(lambda r: _bate_busca_geral(r, _termo), axis=1)]
         if f_estado: dfx = dfx[dfx["estado"] == f_estado]
         if f_cidade: dfx = dfx[dfx["cidade"].str.contains(f_cidade, case=False, na=False)]
         if f_tags:
@@ -431,23 +440,30 @@ elif pagina == "Gestao de Correspondentes (teste)":
             _linhas_card_gc.append(f"... e mais {len(_dff_metricas) - _LIMITE_CARD_GC} correspondente(s).")
         _conteudo_card_gc = "<br>".join(html.escape(l) for l in _linhas_card_gc)
 
-    gm1, gm2, gm3, gm4, gm5 = st.columns([1, 1, 1, 1, 2])
+    _ALTURA_CAIXA_GC = "104px"
+    gm1, gm2, gm3, gm4, gm5 = st.columns(5)
     for col, val, label in [
         (gm1, gc_total,      "Total Correspondentes"),
         (gm2, gc_municipios, "Municipios Atendidos"),
         (gm3, gc_ufs,        "UFs Atendidas"),
         (gm4, gc_empresas,   "Empresas"),
     ]:
-        col.markdown(f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>', unsafe_allow_html=True)
+        col.markdown(
+            f'<div class="metric-card" style="height:{_ALTURA_CAIXA_GC};box-sizing:border-box;'
+            f'display:flex;flex-direction:column;justify-content:center;">'
+            f'<h3>{val}</h3><p>{label}</p></div>',
+            unsafe_allow_html=True,
+        )
     gm5.markdown(
-        f'<div class="metric-card" style="text-align:left;min-height:88px;">'
-        f'<p style="margin:0 0 4px;font-size:0.78rem;font-weight:700;color:{COR_VERMELHO};">Dados do correspondente pesquisado</p>'
-        f'<div style="font-size:0.72rem;color:#333;line-height:1.5;user-select:text;">{_conteudo_card_gc}</div>'
+        f'<div class="metric-card" style="height:{_ALTURA_CAIXA_GC};box-sizing:border-box;'
+        f'text-align:left;overflow-y:auto;">'
+        f'<p style="margin:0 0 4px;font-size:0.72rem;font-weight:700;color:{COR_VERMELHO};">Dados do correspondente pesquisado</p>'
+        f'<div style="font-size:0.68rem;color:#333;line-height:1.4;user-select:text;">{_conteudo_card_gc}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
     if not df_gc.empty:
-        st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros. A caixa a direita "
+        st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros. A ultima caixa "
                    "mostra Nome, OAB, E-mail e Telefone (texto copiavel) apenas quando ha pesquisa por Nome.")
     st.markdown("---")
 
@@ -462,7 +478,10 @@ elif pagina == "Gestao de Correspondentes (teste)":
         else:
             opcoes_tags = opcoes_tags_gc
             col1, col2, col3, col4 = st.columns(4)
-            gc_f_nome   = col1.text_input("Buscar por Nome", key="gc_f_nome")
+            gc_f_nome   = col1.text_input(
+                "Buscar por Nome", key="gc_f_nome",
+                help="Busca em todos os campos do cadastro (nome, OAB, telefone, e-mail, cidade, "
+                     "estado, empresa, cliente, tipo, observacoes) e nas etiquetas.")
             gc_f_estado = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:], key="gc_f_estado")
             gc_f_cidade = col3.text_input("Filtrar por Cidade", key="gc_f_cidade")
             gc_f_tags   = col4.multiselect("Filtrar por Etiquetas (uma ou mais)", opcoes_tags, key="gc_f_tags",
