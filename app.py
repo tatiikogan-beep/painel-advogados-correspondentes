@@ -350,11 +350,63 @@ elif pagina == "Gestao de Correspondentes (teste)":
                "a aba Registros (consultar, editar e excluir) e a aba Cadastro e Importacao. "
                "As abas antigas continuam funcionando normalmente ate esta versao ser aprovada.")
 
-    df_metricas = load_data()
-    gc_total      = len(df_metricas)
-    gc_municipios = df_metricas["cidade"].nunique() if "cidade" in df_metricas.columns and not df_metricas.empty else 0
-    gc_ufs        = df_metricas["estado"].nunique() if "estado" in df_metricas.columns and not df_metricas.empty else 0
-    gc_empresas   = df_metricas["empresa"].nunique() if "empresa" in df_metricas.columns and not df_metricas.empty else 0
+    df_gc = load_data()
+
+    # Estado da migracao do banco (colunas novas / tabela de etiquetas)
+    db_tem_email = df_gc.empty or "email" in df_gc.columns
+    db_tem_tags  = df_gc.empty or "etiquetas" in df_gc.columns
+    tags_reg = load_tags_correspondentes()
+    if not df_gc.empty and (not db_tem_email or not db_tem_tags or tags_reg is None):
+        with st.expander("Configuracao pendente no banco de dados (clique para ver)", expanded=True):
+            st.warning("Para habilitar o campo E-mail e o sistema de etiquetas, execute o SQL abaixo "
+                       "no editor SQL do Supabase (menu 'SQL Editor' > 'New query') uma unica vez:")
+            st.code(SQL_MIGRACAO_CORRESPONDENTES, language="sql")
+    lista_tags_reg = [t.get("nome") for t in (tags_reg or []) if t.get("nome")]
+    cores_tags = {t.get("nome"): (t.get("cor") or "#C8A951") for t in (tags_reg or [])}
+
+    if not df_gc.empty:
+        for c in ("email", "etiquetas"):
+            if c not in df_gc.columns:
+                df_gc[c] = ""
+    tags_usadas = sorted({t for s in df_gc.get("etiquetas", pd.Series(dtype=str)) for t in _split_tags(s)})
+    etiq_legadas = sorted({str(e).strip() for e in df_gc.get("etiqueta", pd.Series(dtype=str)).dropna()
+                           if str(e).strip() and str(e).strip().lower() not in ("nan", "none")})
+    opcoes_tags_gc = sorted(set(lista_tags_reg) | set(tags_usadas) | set(etiq_legadas))
+
+    def _aplica_filtros_gc(df_base, f_nome, f_estado, f_cidade, f_tags):
+        dfx = df_base.copy()
+        for col in dfx.columns:
+            if dfx[col].dtype == object:
+                dfx[col] = dfx[col].fillna("")
+        if f_nome:   dfx = dfx[dfx["nome"].str.contains(f_nome, case=False, na=False)]
+        if f_estado: dfx = dfx[dfx["estado"] == f_estado]
+        if f_cidade: dfx = dfx[dfx["cidade"].str.contains(f_cidade, case=False, na=False)]
+        if f_tags:
+            _sel = set(f_tags)
+            def _tem_alguma_tag(row):
+                tags_do_reg = set(_split_tags(row.get("etiquetas")))
+                legado = str(row.get("etiqueta", "") or "").strip()
+                if legado and legado.lower() not in ("nan", "none"):
+                    tags_do_reg.add(legado)
+                return bool(_sel & tags_do_reg)
+            dfx = dfx[dfx.apply(_tem_alguma_tag, axis=1)]
+        return dfx
+
+    # Le os filtros do estado da sessao (definidos pelos widgets mais abaixo) para
+    # que os indicadores acima ja reflitam a pesquisa feita na aba Registros,
+    # mesmo estando posicionados antes dos widgets no layout da pagina.
+    _dff_metricas = _aplica_filtros_gc(
+        df_gc,
+        st.session_state.get("gc_f_nome", ""),
+        st.session_state.get("gc_f_estado", ""),
+        st.session_state.get("gc_f_cidade", ""),
+        st.session_state.get("gc_f_tags", []),
+    ) if not df_gc.empty else df_gc
+
+    gc_total      = len(_dff_metricas)
+    gc_municipios = _dff_metricas["cidade"].nunique() if "cidade" in _dff_metricas.columns and not _dff_metricas.empty else 0
+    gc_ufs        = _dff_metricas["estado"].nunique() if "estado" in _dff_metricas.columns and not _dff_metricas.empty else 0
+    gc_empresas   = _dff_metricas["empresa"].nunique() if "empresa" in _dff_metricas.columns and not _dff_metricas.empty else 0
     gm1, gm2, gm3, gm4 = st.columns(4)
     for col, val, label in [
         (gm1, gc_total,      "Total Correspondentes"),
@@ -363,130 +415,31 @@ elif pagina == "Gestao de Correspondentes (teste)":
         (gm4, gc_empresas,   "Empresas"),
     ]:
         col.markdown(f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>', unsafe_allow_html=True)
+    if not df_gc.empty:
+        st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros.")
     st.markdown("---")
 
     gc_tab_reg, gc_tab_cad = st.tabs(
         ["Registros", "Cadastro e Importacao"])
 
-    # --- Sub-aba: Registros (com edicao e exclusao direto na tabela) ---
+    # --- Sub-aba: Registros (Cadastro de Correspondentes: consulta e edicao numa unica tabela) ---
     with gc_tab_reg:
-        df = load_data()
-
-        # Estado da migracao do banco (colunas novas / tabela de etiquetas)
-        db_tem_email = df.empty or "email" in df.columns
-        db_tem_tags  = df.empty or "etiquetas" in df.columns
-        tags_reg = load_tags_correspondentes()
-        if not db_tem_email or not db_tem_tags or tags_reg is None:
-            with st.expander("Configuracao pendente no banco de dados (clique para ver)", expanded=True):
-                st.warning("Para habilitar o campo E-mail e o sistema de etiquetas, execute o SQL abaixo "
-                           "no editor SQL do Supabase (menu 'SQL Editor' > 'New query') uma unica vez:")
-                st.code(SQL_MIGRACAO_CORRESPONDENTES, language="sql")
-        lista_tags_reg = [t.get("nome") for t in (tags_reg or []) if t.get("nome")]
-        cores_tags = {t.get("nome"): (t.get("cor") or "#C8A951") for t in (tags_reg or [])}
-
+        df = df_gc
         if df.empty:
             st.info("Nenhum registro encontrado.")
         else:
-            for c in ("email", "etiquetas"):
-                if c not in df.columns:
-                    df[c] = ""
-            # opcoes de etiquetas = cadastradas no gerenciador + ja usadas nos registros + legadas
-            tags_usadas = sorted({t for s in df["etiquetas"] for t in _split_tags(s)})
-            etiq_legadas = sorted({str(e).strip() for e in df["etiqueta"].dropna()
-                                   if str(e).strip() and str(e).strip().lower() not in ("nan", "none")}) if "etiqueta" in df.columns else []
-            opcoes_tags = sorted(set(lista_tags_reg) | set(tags_usadas) | set(etiq_legadas))
-
+            opcoes_tags = opcoes_tags_gc
             col1, col2, col3, col4 = st.columns(4)
             gc_f_nome   = col1.text_input("Buscar por Nome", key="gc_f_nome")
             gc_f_estado = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:], key="gc_f_estado")
             gc_f_cidade = col3.text_input("Filtrar por Cidade", key="gc_f_cidade")
             gc_f_tags   = col4.multiselect("Filtrar por Etiquetas (uma ou mais)", opcoes_tags, key="gc_f_tags",
                                             help="Retorna correspondentes que possuam pelo menos uma das etiquetas selecionadas.")
-            dff = df.copy()
-            for col in dff.columns:
-                if dff[col].dtype == object:
-                    dff[col] = dff[col].fillna("")
-            if gc_f_nome:     dff = dff[dff["nome"].str.contains(gc_f_nome, case=False, na=False)]
-            if gc_f_estado:   dff = dff[dff["estado"] == gc_f_estado]
-            if gc_f_cidade:   dff = dff[dff["cidade"].str.contains(gc_f_cidade, case=False, na=False)]
-            if gc_f_tags:
-                _sel_tags = set(gc_f_tags)
-                def _tem_alguma_tag(row):
-                    tags_do_reg = set(_split_tags(row.get("etiquetas")))
-                    legado = str(row.get("etiqueta", "") or "").strip()
-                    if legado and legado.lower() not in ("nan", "none"):
-                        tags_do_reg.add(legado)
-                    return bool(_sel_tags & tags_do_reg)
-                dff = dff[dff.apply(_tem_alguma_tag, axis=1)]
+            dff = _aplica_filtros_gc(df, gc_f_nome, gc_f_estado, gc_f_cidade, gc_f_tags)
             st.write(f"**{len(dff)} registro(s) encontrado(s)**")
 
-            # Consulta com card de contato (hover no nome) - abre sozinha ao pesquisar por nome
-            import html as _html
-            def _campo_card(v):
-                v = str(v or "").strip()
-                return _html.escape(v) if v and v.lower() not in ("nan", "none", "null") else "Nao informado"
-            with st.expander("Consulta com card de contato (passe o mouse sobre o nome)",
-                             expanded=bool(gc_f_nome)):
-                st.caption("Passe o mouse sobre o nome para ver o card com OAB, e-mail e telefone (textos copiaveis).")
-                _css_hover = (
-                    '<style>'
-                    '.gc-tabela{width:100%;border-collapse:collapse;font-size:13px}'
-                    '.gc-tabela th,.gc-tabela td{padding:6px 10px;border:1px solid #e0e0e0;text-align:left;vertical-align:top;word-break:break-word}'
-                    '.gc-tabela th{background:#f5f5f5;font-weight:600}'
-                    '.gc-tabela tr:hover{background:#fafafa}'
-                    '.gc-nome{position:relative;color:#8B1A1A;font-weight:600;cursor:default}'
-                    '.gc-card{display:none;position:absolute;left:0;top:100%;z-index:999;background:#fff;'
-                    'border:1px solid #ddd;border-left:4px solid #C8A951;border-radius:8px;'
-                    'box-shadow:0 6px 18px rgba(0,0,0,0.18);padding:12px 16px;min-width:280px;max-width:420px;'
-                    'user-select:text;color:#333;font-weight:400}'
-                    '.gc-nome:hover .gc-card{display:block}'
-                    '.gc-card p{margin:3px 0;font-size:12.5px}'
-                    '.gc-card .rotulo{color:#8B1A1A;font-weight:700;margin-right:6px}'
-                    '.gc-chip{display:inline-block;color:#fff;padding:2px 10px;border-radius:10px;'
-                    'font-size:11.5px;font-weight:600;margin:1px 3px 1px 0;white-space:nowrap}'
-                    '</style>'
-                )
-                _linhas_html = ""
-                for _, row in dff.iterrows():
-                    nome_txt = _html.escape(str(row.get("nome", "") or ""))
-                    card = (f'<div class="gc-card">'
-                            f'<p><span class="rotulo">Nome:</span>{_campo_card(row.get("nome"))}</p>'
-                            f'<p><span class="rotulo">OAB:</span>{_campo_card(row.get("oab"))}</p>'
-                            f'<p><span class="rotulo">E-mail:</span>{_campo_card(row.get("email"))}</p>'
-                            f'<p><span class="rotulo">Telefone:</span>{_campo_card(row.get("telefone"))}</p>'
-                            f'</div>')
-                    chips = ""
-                    _tags_row = _split_tags(row.get("etiquetas"))
-                    legado = str(row.get("etiqueta", "") or "").strip()
-                    if legado and legado.lower() not in ("nan", "none") and legado not in _tags_row:
-                        _tags_row.append(legado)
-                    for t in _tags_row:
-                        cor_t = cores_tags.get(t) or ETIQUETAS_CORES.get(t, "#888888")
-                        chips += f'<span class="gc-chip" style="background:{cor_t};">{_html.escape(t)}</span>'
-                    _linhas_html += (
-                        f'<tr>'
-                        f'<td><span class="gc-nome">{nome_txt}{card}</span></td>'
-                        f'<td>{_html.escape(str(row.get("oab", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("telefone", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("email", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("cidade", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("estado", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("empresa", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("cliente", "") or ""))}</td>'
-                        f'<td>{_html.escape(str(row.get("tipo", "") or ""))}</td>'
-                        f'<td>{chips}</td>'
-                        f'</tr>'
-                    )
-                st.markdown(
-                    _css_hover
-                    + '<table class="gc-tabela"><thead><tr>'
-                      '<th>Nome</th><th>OAB</th><th>Telefone</th><th>E-mail</th><th>Cidade</th>'
-                      '<th>Estado</th><th>Empresa</th><th>Cliente</th><th>Tipo</th><th>Etiquetas</th>'
-                      '</tr></thead><tbody>' + _linhas_html + '</tbody></table>',
-                    unsafe_allow_html=True,
-                )
-
-            # Tabela principal (editavel) - todas as colunas
+            # Cadastro de Correspondentes: tabela unica, editavel, com dropdown de etiqueta.
+            st.markdown("#### Cadastro de Correspondentes")
             st.caption("Edite as celulas diretamente na tabela e clique em 'Gravar edicoes'. "
                        "Para excluir, marque a coluna 'Excluir' e use o botao de exclusao abaixo.")
             GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
@@ -658,7 +611,6 @@ elif pagina == "Gestao de Correspondentes (teste)":
                                         update_data(r.get("id"), {"etiquetas": _join_tags(tags_r)})
                                 st.success(f"Etiqueta '{tag_sel_nome}' excluida!")
                                 st.rerun()
-
 
             buf = io.BytesIO()
             dff.to_csv(buf, index=False)
