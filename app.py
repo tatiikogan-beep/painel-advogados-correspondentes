@@ -116,6 +116,26 @@ def _normaliza_txt(s):
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     return s
 
+def _norm_data_iso(data_val):
+    if data_val in (None, ""):
+        return ""
+    txt = str(data_val).strip()
+    # Tenta formatos estritos primeiro (ISO do banco, dd/mm/yyyy da tela).
+    # Evita usar pd.to_datetime(..., dayfirst=True) direto em texto que pode
+    # ja estar em ISO (YYYY-MM-DD): quando dia e mes sao ambos <= 12, o
+    # dayfirst=True troca os dois por engano (ex.: 2026-06-02 vira 2026-02-06).
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        dt = pd.to_datetime(txt, format=fmt, errors="coerce")
+        if pd.notna(dt):
+            return dt.strftime("%Y-%m-%d")
+    dt = pd.to_datetime(txt, errors="coerce", dayfirst=True)
+    return dt.strftime("%Y-%m-%d") if pd.notna(dt) else txt
+
+def _parse_data_segura(serie):
+    """Converte uma serie de datas (mistura de ISO e dd/mm/yyyy) em datetime,
+    sem o risco de dayfirst=True reinterpretar uma data ISO ja correta."""
+    return pd.to_datetime(serie.apply(_norm_data_iso), format="%Y-%m-%d", errors="coerce")
+
 GRUPOS_CLIENTE = {
     "imc saste": "IMC Saste Construcoes Servicos e Comercio Ltda.",
     "gpm": "GPM - Pague Menos",
@@ -287,7 +307,7 @@ if pagina == "Dashboard":
     st.caption(f"Referencia: {meses_pt[hoje_d.month-1]}/{hoje_d.year} (mes vigente).")
     qtd_imc = 0
     if not df_aud.empty and "data" in df_aud.columns and "cliente" in df_aud.columns:
-        _dt = pd.to_datetime(df_aud["data"], errors="coerce", dayfirst=True)
+        _dt = _parse_data_segura(df_aud["data"])
         _mes = df_aud[(_dt >= pd.Timestamp(ini_mes)) & (_dt < pd.Timestamp(hoje_d) + pd.Timedelta(days=1))]
         _canon = _mes["cliente"].apply(cliente_canonico)
         qtd_imc = int((_canon == "IMC Saste Construcoes Servicos e Comercio Ltda.").sum())
@@ -510,21 +530,6 @@ elif pagina == "Gestao Financeira":
     def fmt_brl(v):
         return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
 
-    def _norm_data_iso(data_val):
-        if data_val in (None, ""):
-            return ""
-        txt = str(data_val).strip()
-        # Tenta formatos estritos primeiro (ISO do banco, dd/mm/yyyy da previa).
-        # Evita usar pd.to_datetime(..., dayfirst=True) em texto livre aqui: quando
-        # o texto ja esta em ISO (YYYY-MM-DD) e dia/mes sao ambos <= 12, o
-        # dayfirst=True troca mes e dia por engano (ex.: 2026-06-02 vira 2026-02-06).
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-            dt = pd.to_datetime(txt, format=fmt, errors="coerce")
-            if pd.notna(dt):
-                return dt.strftime("%Y-%m-%d")
-        dt = pd.to_datetime(txt, errors="coerce", dayfirst=True)
-        return dt.strftime("%Y-%m-%d") if pd.notna(dt) else txt
-
     def _chave_duplicidade(numero_cnj, data_val, hora_val, cliente_val, id_audiencia_val=None,
                             solicitacao_val=None, contrario_val=None, valor_val=None):
         id_a = str(id_audiencia_val or "").strip().lower()
@@ -680,7 +685,7 @@ elif pagina == "Gestao Financeira":
         # filtragem/ordenacao e reformata a coluna exibida para dd/mm/yyyy,
         # igual ao formato usado na previa de importacao e nos graficos -
         # evita a divergencia de formato entre a tabela final e o restante da tela.
-        df_fin["_dt"]        = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
+        df_fin["_dt"]        = _parse_data_segura(df_fin["Data"])
         df_fin["Data"]       = df_fin["_dt"].dt.strftime("%d/%m/%Y").fillna(df_fin["Data"])
         df_fin["_cli_canon"] = df_fin["Cliente Processo"].apply(cliente_canonico)
         df_fin["_valor_num"] = pd.to_numeric(df_fin["VALOR"], errors="coerce").fillna(0.0)
@@ -1030,8 +1035,8 @@ elif pagina == "Gestao Financeira":
                                 v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
                                 rec[col_db] = float(v) if pd.notna(v) else None
                             elif col_db == "data":
-                                dt_final = pd.to_datetime(val, errors="coerce", dayfirst=True) if val else pd.NaT
-                                rec[col_db] = dt_final.strftime("%Y-%m-%d") if pd.notna(dt_final) else None
+                                iso = _norm_data_iso(val) if val and str(val).strip() not in ("", "nan", "NaT") else ""
+                                rec[col_db] = iso if len(iso) == 10 and iso[4] == "-" else None
                             else:
                                 rec[col_db] = str(val).strip() if pd.notna(val) and str(val).strip() else None
                         registros.append(rec)
@@ -1131,8 +1136,8 @@ elif pagina == "Gestao Financeira":
                         v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
                         upd_fields[col_db] = float(v) if pd.notna(v) else None
                     elif col_db == "data":
-                        _dt_edit = pd.to_datetime(val, errors="coerce", dayfirst=True) if val and str(val).strip() not in ("", "nan", "NaT") else pd.NaT
-                        upd_fields[col_db] = _dt_edit.strftime("%Y-%m-%d") if pd.notna(_dt_edit) else None
+                        iso = _norm_data_iso(val) if val and str(val).strip() not in ("", "nan", "NaT") else ""
+                        upd_fields[col_db] = iso if len(iso) == 10 and iso[4] == "-" else None
                     else:
                         v_str = str(val).strip() if val and str(val).strip() not in ("", "nan") else None
                         upd_fields[col_db] = _padroniza_texto(col_db, v_str)
