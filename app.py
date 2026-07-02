@@ -1111,12 +1111,19 @@ elif pagina == "Gestao Financeira":
             "_id": st.column_config.Column("ID Interno", disabled=True),
         }
 
+        st.caption("Voce pode editar as celulas diretamente na tabela (ex.: marcar a Etiqueta Financeira). "
+                   "As mudancas so sao gravadas no banco ao clicar no botao abaixo.")
         df_editado = st.data_editor(
             df_edit_fin, hide_index=True, use_container_width=True,
             num_rows="fixed", column_config=column_config, key="fin_table_editor",
         )
 
-        if st.button("Salvar alteracoes da tabela", type="primary", key="fin_save_edits"):
+        if st.button(
+            "Gravar edicoes feitas na tabela",
+            type="primary",
+            key="fin_save_edits",
+            help="Grava no banco de dados as celulas que voce alterou diretamente na tabela acima. Se voce nao editou nada, nao ha o que gravar.",
+        ):
             erros_upd = 0
             ok_upd = 0
             for idx in range(len(df_editado)):
