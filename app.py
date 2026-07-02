@@ -487,7 +487,7 @@ elif pagina == "Gestao Financeira":
                    "Modalidade", "Solicitacao", "Cidade", "UF",
                    "Reembolsavel", "Empresa Correspondente", "Observacao", "Etiqueta Financeira"]
     COLS_PREVIA = ["Data/Hora de Inicio", "Natureza", "Tipo / Subtipo", "VALOR",
-                   "Cliente Processo", "Contrario Principal", "Cidade", "UF",
+                   "Cliente Processo", "Contrario Principal", "Solicitacao", "Cidade", "UF",
                    "Reembolsavel", "Empresa Correspondente", "Observacao"]
     MAPA_DB = {
         "Data": "data", "Hora de Inicio": "hora_inicio", "ID": "id_audiencia",
@@ -510,13 +510,35 @@ elif pagina == "Gestao Financeira":
     def fmt_brl(v):
         return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
 
+    def _norm_data_iso(data_val):
+        if data_val in (None, ""):
+            return ""
+        txt = str(data_val).strip()
+        # Tenta formatos estritos primeiro (ISO do banco, dd/mm/yyyy da previa).
+        # Evita usar pd.to_datetime(..., dayfirst=True) em texto livre aqui: quando
+        # o texto ja esta em ISO (YYYY-MM-DD) e dia/mes sao ambos <= 12, o
+        # dayfirst=True troca mes e dia por engano (ex.: 2026-06-02 vira 2026-02-06).
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            dt = pd.to_datetime(txt, format=fmt, errors="coerce")
+            if pd.notna(dt):
+                return dt.strftime("%Y-%m-%d")
+        dt = pd.to_datetime(txt, errors="coerce", dayfirst=True)
+        return dt.strftime("%Y-%m-%d") if pd.notna(dt) else txt
+
     def _chave_duplicidade(numero_cnj, data_val, hora_val, cliente_val, id_audiencia_val=None,
                             solicitacao_val=None, contrario_val=None, valor_val=None):
         id_a = str(id_audiencia_val or "").strip().lower()
         if id_a and id_a not in ("nan", "none", "null"):
-            return f"id:{id_a}"
+            # O ID pode identificar a audiencia (nao o lancamento) e ser
+            # compartilhado por mais de uma solicitacao (Preposto/Advogado) -
+            # mantem solicitacao na chave mesmo no atalho por ID.
+            sol_id = str(solicitacao_val or "").strip().lower()
+            return f"id:{id_a}|sol:{sol_id}"
         cnj = str(numero_cnj or "").strip().lower()
-        dat = str(data_val or "").strip()
+        # A data pode chegar em formatos diferentes (ISO vindo do banco,
+        # dd/mm/yyyy vindo da previa de importacao) - normaliza sempre para
+        # ISO para que a mesma audiencia gere a mesma chave independente da origem.
+        dat = _norm_data_iso(data_val)
         hor = str(hora_val or "").strip().lower()
         cli = str(cliente_val or "").strip().lower()
         sol = str(solicitacao_val or "").strip().lower()
@@ -531,6 +553,118 @@ elif pagina == "Gestao Financeira":
         # na chave para nao tratar esses casos como duplicidade.
         return f"cnj:{cnj}|data:{dat}|hora:{hor}|cliente:{cli}|sol:{sol}|contrario:{con}|valor:{val}"
 
+    _CONECTORES_PT = {"de", "da", "do", "das", "dos", "e", "em"}
+    def _titulo_pt(s):
+        if s is None:
+            return None
+        txt = str(s).strip()
+        if not txt:
+            return None
+        palavras = txt.lower().split(" ")
+        saida = []
+        for i, p in enumerate(palavras):
+            if not p:
+                saida.append(p)
+            elif i > 0 and p in _CONECTORES_PT:
+                saida.append(p)
+            else:
+                saida.append(p[:1].upper() + p[1:])
+        return " ".join(saida)
+
+    _UF_SIGLA = {sigla.lower(): sigla for sigla in ESTADOS if sigla}
+    _UF_NOME_PARA_SIGLA = {
+        "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM", "bahia": "BA",
+        "ceara": "CE", "distrito federal": "DF", "espirito santo": "ES", "goias": "GO",
+        "maranhao": "MA", "mato grosso": "MT", "mato grosso do sul": "MS", "minas gerais": "MG",
+        "para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE", "piaui": "PI",
+        "rio de janeiro": "RJ", "rio grande do norte": "RN", "rio grande do sul": "RS",
+        "rondonia": "RO", "roraima": "RR", "santa catarina": "SC", "sao paulo": "SP",
+        "sergipe": "SE", "tocantins": "TO",
+    }
+    def _norm_uf(v):
+        if v is None:
+            return None
+        txt = str(v).strip()
+        if not txt:
+            return None
+        if txt.lower() in _UF_SIGLA:
+            return _UF_SIGLA[txt.lower()]
+        norm = _normaliza_txt(txt)
+        if norm in _UF_NOME_PARA_SIGLA:
+            return _UF_NOME_PARA_SIGLA[norm]
+        return txt.upper() if len(txt) <= 2 else _titulo_pt(txt)
+
+    def _padroniza_texto(col_db, v_str):
+        if not v_str:
+            return v_str
+        if col_db == "cliente":
+            return v_str.upper()
+        if col_db == "uf":
+            return _norm_uf(v_str)
+        if col_db == "reembolsavel":
+            norm = _normaliza_txt(v_str)
+            if norm in ("sim", "s", "yes", "y", "1", "true"):
+                return "Sim"
+            if norm in ("nao", "n", "no", "0", "false"):
+                return "Nao"
+            return _titulo_pt(v_str)
+        if col_db in ("hora_inicio", "numero_cnj", "id_audiencia", "etiqueta_financeira", "data"):
+            return v_str
+        return _titulo_pt(v_str)
+
+    _SINONIMOS_COLUNAS_FIN = {
+        "Numero CNJ": ["numerodecnj", "numerocnj", "numerodoproc", "numerodoprocesso", "numerodoprocessocnj", "processo", "nprocesso", "numcnj", "cnj"],
+        "UF": ["uf", "estado", "ufestado", "estadouf"],
+        "Contrario Principal": ["contrarioprincipal", "partecontraria", "contrario", "reu", "parteadversa", "partescontrarias", "contrariodaacao"],
+        "Solicitacao": ["solicitacao", "solicitacoes", "tiposolicitacao"],
+        "Observacao": ["observacao", "observacoes", "obs"],
+    }
+    def _norm_map_coluna(s):
+        return _normaliza_txt(s).replace(" ", "").strip()
+    def _resolver_mapa_colunas(colunas_planilha):
+        _col_map = {}
+        for col_planilha in colunas_planilha:
+            _col_map[_norm_map_coluna(col_planilha)] = col_planilha
+        _mapa_flex = {}
+        for rotulo_db in MAPA_DB.keys():
+            rotulo_norm = _norm_map_coluna(rotulo_db)
+            if rotulo_db in colunas_planilha:
+                _mapa_flex[rotulo_db] = rotulo_db
+            elif rotulo_norm in _col_map:
+                _mapa_flex[rotulo_db] = _col_map[rotulo_norm]
+            else:
+                encontrado = False
+                if rotulo_db in _SINONIMOS_COLUNAS_FIN:
+                    for sin in _SINONIMOS_COLUNAS_FIN[rotulo_db]:
+                        if sin in _col_map:
+                            _mapa_flex[rotulo_db] = _col_map[sin]
+                            encontrado = True
+                            break
+                # Correspondencia parcial (substring) so e tentada para rotulos com
+                # pelo menos 4 caracteres normalizados - rotulos curtos como "ID" ou
+                # "UF" geram falsos positivos (ex.: "id" e substring de "modalidade"),
+                # o que faria a coluna errada ser usada como fonte de dados.
+                if not encontrado and len(rotulo_norm) >= 4:
+                    for col_norm_k, col_orig_v in _col_map.items():
+                        if rotulo_norm in col_norm_k or col_norm_k in rotulo_norm:
+                            _mapa_flex[rotulo_db] = col_orig_v
+                            encontrado = True
+                            break
+                if not encontrado:
+                    _mapa_flex[rotulo_db] = rotulo_db
+        return _mapa_flex
+
+    @st.cache_data(ttl=60)
+    def _carregar_chaves_existentes():
+        try:
+            sb2 = get_supabase()
+            resp = sb2.table("audiencias").select(
+                "id_audiencia,numero_cnj,data,hora_inicio,cliente,solicitacao,parte_contraria,valor"
+            ).execute()
+            return resp.data or []
+        except Exception:
+            return []
+
     df_db = load_audiencias()
     if not df_db.empty:
         inv = {v: k for k, v in MAPA_DB.items()}
@@ -542,7 +676,12 @@ elif pagina == "Gestao Financeira":
         df_fin = pd.DataFrame(columns=COLUNAS_FIN)
 
     if not df_fin.empty:
+        # "Data" vem do banco em ISO (YYYY-MM-DD). Guarda o valor bruto para
+        # filtragem/ordenacao e reformata a coluna exibida para dd/mm/yyyy,
+        # igual ao formato usado na previa de importacao e nos graficos -
+        # evita a divergencia de formato entre a tabela final e o restante da tela.
         df_fin["_dt"]        = pd.to_datetime(df_fin["Data"], errors="coerce", dayfirst=True)
+        df_fin["Data"]       = df_fin["_dt"].dt.strftime("%d/%m/%Y").fillna(df_fin["Data"])
         df_fin["_cli_canon"] = df_fin["Cliente Processo"].apply(cliente_canonico)
         df_fin["_valor_num"] = pd.to_numeric(df_fin["VALOR"], errors="coerce").fillna(0.0)
         if "id" not in df_fin.columns and "ID" in df_fin.columns:
@@ -579,31 +718,13 @@ elif pagina == "Gestao Financeira":
         st.session_state["fin_f_etiq"] = "(Todas)"
         st.session_state["fin_f_ini"] = _data_ini_default
         st.session_state["fin_f_fim"] = _data_fim_default
-    st.button("Limpar todos os filtros", key="fin_limpar", on_click=_limpar_filtros_fin)
-    if st.button("Atualizar dados (recarregar do banco)", key="fin_refresh"):
         st.cache_data.clear()
-        st.rerun()
-
-    if not df_fin.empty:
-        _dup_chaves = df_fin.apply(
-            lambda r: _chave_duplicidade(r.get("Numero CNJ"), r.get("Data"), r.get("Hora de Inicio"),
-                                          r.get("Cliente Processo"), r.get("ID"), r.get("Solicitacao"),
-                                          r.get("Contrario Principal"), r.get("VALOR")),
-            axis=1,
-        )
-        _dup_cont = _dup_chaves.value_counts()
-        _chaves_duplicadas = set(_dup_cont[_dup_cont > 1].index)
-        if _chaves_duplicadas:
-            df_duplicados = df_fin[_dup_chaves.isin(_chaves_duplicadas)].copy()
-            df_duplicados["_chave_dup"] = _dup_chaves[_dup_chaves.isin(_chaves_duplicadas)]
-            df_duplicados = df_duplicados.sort_values("_chave_dup")
-            with st.expander(f"{len(df_duplicados)} lancamento(s) em possivel duplicidade encontrados no banco", expanded=False):
-                st.caption("Registros com o mesmo Numero CNJ/ID + Data + Hora + Cliente. Revise antes de excluir manualmente os repetidos.")
-                cols_dup = [c for c in ["id", "Data", "Hora de Inicio", "Numero CNJ", "Cliente Processo",
-                                         "Empresa Correspondente", "VALOR", "Etiqueta Financeira"] if c in df_duplicados.columns]
-                st.dataframe(df_duplicados[cols_dup], hide_index=True, use_container_width=True)
-        else:
-            st.caption("Nenhuma duplicidade encontrada nos lancamentos ja salvos no banco.")
+    st.button(
+        "Limpar filtros e atualizar dados",
+        key="fin_limpar",
+        on_click=_limpar_filtros_fin,
+        help="Remove todos os filtros de busca (cliente, modalidade, data, etc.) e recarrega os lancamentos diretamente do banco de dados.",
+    )
 
     dff = df_fin.copy()
     for c in dff.columns:
@@ -746,8 +867,13 @@ elif pagina == "Gestao Financeira":
 
     # Importacao de planilha
     st.markdown("#### Importar planilha de audiencias")
-    st.caption("Carregamento em massa - arquivos .xlsx ou .csv.")
-    arq_fin = st.file_uploader("Enviar planilha financeira", type=["csv", "xlsx", "xls"], key="fin_upload")
+    st.caption("Carregamento em massa - arquivos .xlsx ou .csv. Aceita diferentes modelos de planilha, desde que contenham as informacoes necessarias.")
+    if "fin_upload_counter" not in st.session_state:
+        st.session_state["fin_upload_counter"] = 0
+    arq_fin = st.file_uploader(
+        "Enviar planilha financeira", type=["csv", "xlsx", "xls"],
+        key=f"fin_upload_{st.session_state['fin_upload_counter']}",
+    )
     COLS_MODELO = ["Data/Hora de Inicio", "ID", "Natureza", "Numero CNJ", "Tipo / Subtipo",
                    "VALOR", "Cliente Processo", "Contrario Principal", "Modalidade", "Solicitacao",
                    "Cidade", "UF", "Reembolsavel", "Empresa Correspondente", "Observacao"]
@@ -766,12 +892,10 @@ elif pagina == "Gestao Financeira":
                 aba = "Consolidado" if "Consolidado" in xls.sheet_names else xls.sheet_names[0]
                 df_novo = pd.read_excel(xls, sheet_name=aba, dtype=str)
             df_novo.columns = [str(c).strip() for c in df_novo.columns]
-            import unicodedata as _ud
+
+            # Deteccao da coluna de data/hora - tolera diferentes nomes/layouts de planilha
             def _norm_col(s):
-                s2 = str(s).strip().lower()
-                s2 = _ud.normalize("NFKD", s2)
-                s2 = "".join(ch for ch in s2 if not _ud.combining(ch))
-                return s2.replace(" ", "").replace("/", "").replace("-", "")
+                return _normaliza_txt(s).replace(" ", "")
             _DATAS_ACEITAS = {
                 "datahorainicio", "datahora", "datainicio", "data",
                 "dataaudiencia", "datadaaudiencia",
@@ -787,151 +911,131 @@ elif pagina == "Gestao Financeira":
                         col_dh = c
                         break
             if col_dh:
-                d_fmt, h_fmt, _, iso_fmt = parte_data(df_novo[col_dh])
+                d_fmt, h_fmt, _, _ = parte_data(df_novo[col_dh])
                 df_novo["Data"] = d_fmt
                 df_novo["Hora de Inicio"] = h_fmt
-                df_novo["_data_iso"] = iso_fmt
             else:
+                df_novo["Data"] = ""
+                df_novo["Hora de Inicio"] = ""
                 _data_cols_found = [c for c in df_novo.columns if "data" in _norm_col(c)]
                 if _data_cols_found:
                     st.warning(f"Coluna de data nao reconhecida automaticamente. Encontradas: {_data_cols_found}. Renomeie para 'Data/Hora de Inicio'.")
                 else:
                     st.warning("Nenhuma coluna de data encontrada na planilha. Adicione uma coluna 'Data/Hora de Inicio'.")
-            st.write(f"Previa e conferencia dos dados ({len(df_novo)} linha(s)):")
-            st.caption("Revise abaixo. Voce pode corrigir qualquer celula diretamente na tabela antes de importar.")
-            cols_conf = [c for c in COLS_PREVIA if c in df_novo.columns]
-            for extra in ("Data", "Hora de Inicio", "Numero CNJ"):
-                if extra in df_novo.columns and extra not in cols_conf:
-                    cols_conf.append(extra)
-            if not cols_conf:
-                cols_conf = list(df_novo.columns)
-            df_conf = df_novo.copy()
 
-            def checa_linha(row):
-                probs = []
-                dval = str(row.get("Data", "") or "").strip()
-                if not dval: probs.append("Data ausente")
-                elif pd.isna(pd.to_datetime(dval, format="%d/%m/%Y", errors="coerce")): probs.append("Data invalida")
-                vraw = row.get("VALOR")
-                vtxt = str(vraw or "").strip()
-                if vtxt and pd.isna(pd.to_numeric(pd.Series([vtxt.replace(".", "").replace(",", ".")]), errors="coerce").iloc[0]):
-                    probs.append("Valor nao numerico")
-                if not str(row.get("Cliente Processo", "") or "").strip(): probs.append("Cliente ausente")
-                return "; ".join(probs)
+            # Reconhece o layout da planilha (nomes de coluna podem variar entre versoes
+            # do modelo) e monta uma tabela padronizada, ja com a formatacao de texto
+            # aplicada (Primeira Letra Maiuscula, Cliente em CAIXA ALTA).
+            _mapa_flex = _resolver_mapa_colunas(list(df_novo.columns))
+            df_padrao = pd.DataFrame(index=df_novo.index)
+            for rotulo_db, col_db in MAPA_DB.items():
+                if col_db == "etiqueta_financeira":
+                    continue
+                if rotulo_db in ("Data", "Hora de Inicio"):
+                    df_padrao[rotulo_db] = df_novo[rotulo_db]
+                    continue
+                col_origem = _mapa_flex.get(rotulo_db, rotulo_db)
+                serie = df_novo[col_origem] if col_origem in df_novo.columns else pd.Series([None] * len(df_novo), index=df_novo.index)
+                if col_db == "valor":
+                    df_padrao[rotulo_db] = serie
+                else:
+                    df_padrao[rotulo_db] = serie.apply(
+                        lambda v: _padroniza_texto(col_db, str(v).strip() if pd.notna(v) and str(v).strip() else None)
+                    )
 
-            df_conf["Conferencia"] = df_conf.apply(checa_linha, axis=1)
-            # Mostrar colunas identificadas na planilha
-            _colunas_esperadas = list(MAPA_DB.keys())
-            _colunas_encontradas = [c for c in _colunas_esperadas if c in df_novo.columns]
-            _colunas_nao_encontradas = [c for c in _colunas_esperadas if c not in df_novo.columns]
-            if _colunas_nao_encontradas:
-                with st.expander(f"{len(_colunas_nao_encontradas)} coluna(s) nao encontradas diretamente (mapeamento flexivel sera usado):"):
-                    st.write("Colunas da planilha: " + ", ".join(list(df_novo.columns)))
-                    st.write("Nao encontradas: " + ", ".join(_colunas_nao_encontradas))
-
-            n_inconsist = int((df_conf["Conferencia"] != "").sum())
-            if n_inconsist:
-                st.warning(f"{n_inconsist} linha(s) com possiveis inconsistencias.")
-                with st.expander(f"Ver {n_inconsist} inconsistencia(s)"):
-                    st.dataframe(df_conf.loc[df_conf["Conferencia"] != "", [c for c in cols_conf if c in df_conf.columns] + ["Conferencia"]], hide_index=True, use_container_width=True)
-            else:
-                st.success("Nenhuma inconsistencia detectada.")
-            cols_editor = [c for c in cols_conf if c in df_conf.columns] + ["Conferencia"]
-            _conf_col_cfg = {
-                "Reembolsavel": st.column_config.SelectboxColumn(
-                    "Reembolsavel", options=["", "Sim", "Nao"], required=False),
+            n_linhas = len(df_padrao)
+            sb = get_supabase()
+            existentes = _carregar_chaves_existentes()
+            chaves_existentes = {
+                _chave_duplicidade(r.get("numero_cnj"), r.get("data"), r.get("hora_inicio"),
+                                    r.get("cliente"), r.get("id_audiencia"), r.get("solicitacao"),
+                                    r.get("parte_contraria"), r.get("valor"))
+                for r in existentes
             }
-            df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], column_config=_conf_col_cfg, key=f"fin_editor_{_arq_fin_id}")
-            df_final = df_novo.copy()
-            for c in cols_editor:
-                if c != "Conferencia" and c in df_edit.columns:
-                    df_final[c] = df_edit[c].values
-            if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
-                registros = []
-                import unicodedata as _ud2
-                def _norm_map(s):
-                    import re as _re2
-                    s2 = str(s).strip().lower()
-                    s2 = _ud2.normalize("NFKD", s2)
-                    s2 = "".join(ch for ch in s2 if not _ud2.combining(ch))
-                    s2 = _re2.sub(r"[^a-z0-9]+", "", s2)
-                    return s2.strip()
-                _col_map = {}
-                for col_planilha in df_final.columns:
-                    _col_map[_norm_map(col_planilha)] = col_planilha
-                _mapa_flex = {}
-                # Mapeamento de sinonimos para colunas especiais
-                _SINONIMOS = {
-                    "Numero CNJ": ["numerodecnj", "numerocnj", "numerodoproc", "numerodoprocesso", "numerodoprocessocnj", "processo", "nprocesso", "numcnj", "cnj"],
-                    "UF": ["uf", "estado", "ufestado", "estadouf"],
-                    "Contrario Principal": ["contrarioprincipal", "partecontraria", "contrario", "reu", "parteadversa", "partescontrarias", "contrariodaacao"],
-                    "Solicitacao": ["solicitacao", "solicitacoes", "tiposolicitacao"],
-                    "Observacao": ["observacao", "observacoes", "obs"],
+            _chaves_planilha = df_padrao.apply(
+                lambda r: _chave_duplicidade(r.get("Numero CNJ"), r.get("Data"), r.get("Hora de Inicio"),
+                                              r.get("Cliente Processo"), r.get("ID"), r.get("Solicitacao"),
+                                              r.get("Contrario Principal"), r.get("VALOR")),
+                axis=1,
+            )
+            ja_no_banco = int(_chaves_planilha.isin(chaves_existentes).sum())
+
+            if n_linhas > 0 and ja_no_banco == n_linhas:
+                st.warning(
+                    f"Esta planilha ja foi importada anteriormente - os {n_linhas} registro(s) ja constam no banco de "
+                    "dados. Nenhum dado novo foi encontrado, portanto nada sera gravado."
+                )
+            else:
+                st.write(f"Previa e conferencia dos dados ({n_linhas} linha(s)):")
+                st.caption("Revise abaixo. Voce pode corrigir qualquer celula diretamente na tabela antes de importar. "
+                           "Esta tabela e apenas para conferencia e desaparece assim que a importacao for concluida.")
+                if ja_no_banco > 0:
+                    st.caption(f"Observacao: {ja_no_banco} de {n_linhas} linha(s) desta planilha ja constam no banco e serao ignoradas automaticamente.")
+
+                cols_conf = [c for c in COLS_PREVIA if c in df_padrao.columns]
+                for extra in ("Data", "Hora de Inicio", "Numero CNJ"):
+                    if extra in df_padrao.columns and extra not in cols_conf:
+                        cols_conf.append(extra)
+                df_conf = df_padrao.copy()
+
+                def checa_linha(row):
+                    probs = []
+                    dval = str(row.get("Data", "") or "").strip()
+                    if not dval: probs.append("Data ausente")
+                    elif pd.isna(pd.to_datetime(dval, format="%d/%m/%Y", errors="coerce")): probs.append("Data invalida")
+                    vraw = row.get("VALOR")
+                    vtxt = str(vraw or "").strip()
+                    if vtxt and pd.isna(pd.to_numeric(pd.Series([vtxt.replace(".", "").replace(",", ".")]), errors="coerce").iloc[0]):
+                        probs.append("Valor nao numerico")
+                    if not str(row.get("Cliente Processo", "") or "").strip(): probs.append("Cliente ausente")
+                    return "; ".join(probs)
+
+                df_conf["Conferencia"] = df_conf.apply(checa_linha, axis=1)
+                _colunas_nao_encontradas = [c for c in MAPA_DB.keys() if c not in ("Data", "Hora de Inicio", "Etiqueta Financeira")
+                                            and _mapa_flex.get(c, c) not in df_novo.columns]
+                if _colunas_nao_encontradas:
+                    with st.expander(f"{len(_colunas_nao_encontradas)} coluna(s) nao encontradas diretamente (mapeamento flexivel sera usado):"):
+                        st.write("Colunas da planilha: " + ", ".join(list(df_novo.columns)))
+                        st.write("Nao encontradas: " + ", ".join(_colunas_nao_encontradas))
+
+                n_inconsist = int((df_conf["Conferencia"] != "").sum())
+                if n_inconsist:
+                    st.warning(f"{n_inconsist} linha(s) com possiveis inconsistencias.")
+                    with st.expander(f"Ver {n_inconsist} inconsistencia(s)"):
+                        st.dataframe(df_conf.loc[df_conf["Conferencia"] != "", cols_conf + ["Conferencia"]], hide_index=True, use_container_width=True)
+                else:
+                    st.success("Nenhuma inconsistencia detectada.")
+                cols_editor = cols_conf + ["Conferencia"]
+                _conf_col_cfg = {
+                    "Reembolsavel": st.column_config.SelectboxColumn(
+                        "Reembolsavel", options=["", "Sim", "Nao"], required=False),
+                    "UF": st.column_config.SelectboxColumn("UF", options=ESTADOS, required=False),
                 }
-                for rotulo_db in MAPA_DB.keys():
-                    rotulo_norm = _norm_map(rotulo_db)
-                    if rotulo_db in df_final.columns:
-                        _mapa_flex[rotulo_db] = rotulo_db
-                    elif rotulo_norm in _col_map:
-                        _mapa_flex[rotulo_db] = _col_map[rotulo_norm]
-                    else:
-                        # Tentar sinonimos
-                        encontrado = False
-                        if rotulo_db in _SINONIMOS:
-                            for sin in _SINONIMOS[rotulo_db]:
-                                if sin in _col_map:
-                                    _mapa_flex[rotulo_db] = _col_map[sin]
-                                    encontrado = True
-                                    break
-                        if not encontrado:
-                            # Busca parcial: verificar se alguma coluna da planilha contem a chave normalizada
-                            for col_norm_k, col_orig_v in _col_map.items():
-                                if rotulo_norm in col_norm_k or col_norm_k in rotulo_norm:
-                                    _mapa_flex[rotulo_db] = col_orig_v
-                                    encontrado = True
-                                    break
-                        if not encontrado:
-                            _mapa_flex[rotulo_db] = rotulo_db
-                for _, row in df_final.iterrows():
-                    rec = {}
-                    for rotulo, col_db in MAPA_DB.items():
-                        rotulo = _mapa_flex.get(rotulo, rotulo)
-                        val = row.get(rotulo)
-                        if col_db == "valor":
-                            v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
-                            rec[col_db] = float(v) if pd.notna(v) else None
-                        elif col_db == "data":
-                            iso_val = row.get("_data_iso")
-                            if pd.notna(iso_val) and str(iso_val).strip() not in ("", "NaT", "nan"):
-                                rec[col_db] = str(iso_val).strip()
+                df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], column_config=_conf_col_cfg, key=f"fin_editor_{_arq_fin_id}")
+                df_final = df_padrao.copy()
+                for c in cols_editor:
+                    if c != "Conferencia" and c in df_edit.columns:
+                        df_final[c] = df_edit[c].values
+
+                if st.button("Importar e salvar registros", type="primary", key="fin_salvar"):
+                    registros = []
+                    for _, row in df_final.iterrows():
+                        rec = {}
+                        for rotulo_db, col_db in MAPA_DB.items():
+                            if col_db == "etiqueta_financeira":
+                                rec[col_db] = None
+                                continue
+                            val = row.get(rotulo_db)
+                            if col_db == "valor":
+                                v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
+                                rec[col_db] = float(v) if pd.notna(v) else None
+                            elif col_db == "data":
+                                dt_final = pd.to_datetime(val, errors="coerce", dayfirst=True) if val else pd.NaT
+                                rec[col_db] = dt_final.strftime("%Y-%m-%d") if pd.notna(dt_final) else None
                             else:
-                                rec[col_db] = (str(val).strip() if pd.notna(val) and str(val).strip() else None)
-                        else:
-                            v_str = str(val).strip() if pd.notna(val) and str(val).strip() else None
-                            if col_db == "reembolsavel" and v_str:
-                                import unicodedata as _udn
-                                _rv = "".join(c for c in _udn.normalize("NFKD", v_str.lower()) if not _udn.combining(c))
-                                if _rv in ("sim", "s", "yes", "y", "1", "true"):
-                                    v_str = "Sim"
-                                elif _rv in ("nao", "n", "no", "0", "false"):
-                                    v_str = "Nao"
-                            rec[col_db] = v_str
-                    registros.append(rec)
-                if registros:
-                    sb = get_supabase()
-                    try:
-                        existentes_resp = sb.table("audiencias").select(
-                            "id_audiencia,numero_cnj,data,hora_inicio,cliente,solicitacao,parte_contraria,valor"
-                        ).execute()
-                        existentes = existentes_resp.data or []
-                    except Exception:
-                        existentes = []
-                    chaves_existentes = {
-                        _chave_duplicidade(r.get("numero_cnj"), r.get("data"), r.get("hora_inicio"),
-                                            r.get("cliente"), r.get("id_audiencia"), r.get("solicitacao"),
-                                            r.get("parte_contraria"), r.get("valor"))
-                        for r in existentes
-                    }
+                                rec[col_db] = str(val).strip() if pd.notna(val) and str(val).strip() else None
+                        registros.append(rec)
+
                     registros_novos = []
                     chaves_no_lote = set()
                     duplicados = 0
@@ -944,6 +1048,7 @@ elif pagina == "Gestao Financeira":
                             continue
                         chaves_no_lote.add(chave)
                         registros_novos.append(rec)
+
                     total_ok = 0
                     erros = []
                     for i in range(0, len(registros_novos), 200):
@@ -964,6 +1069,9 @@ elif pagina == "Gestao Financeira":
                         st.error(f"Importados {total_ok} de {len(registros_novos)}.{msg_dup} Total no banco: {total_banco}. Erros: " + " | ".join(erros[:3]))
                     else:
                         st.success(f"{total_ok} registro(s) importado(s).{msg_dup} Total no banco agora: {total_banco}.")
+                        # Reseta o campo de upload (nova key) para que a tabela de previa
+                        # suma da tela e so volte a aparecer com uma nova planilha selecionada.
+                        st.session_state["fin_upload_counter"] += 1
                         st.rerun()
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
@@ -1023,9 +1131,11 @@ elif pagina == "Gestao Financeira":
                         v = pd.to_numeric(pd.Series([val]), errors="coerce").iloc[0]
                         upd_fields[col_db] = float(v) if pd.notna(v) else None
                     elif col_db == "data":
-                        upd_fields[col_db] = str(val).strip() if val and str(val).strip() not in ("", "nan", "NaT") else None
+                        _dt_edit = pd.to_datetime(val, errors="coerce", dayfirst=True) if val and str(val).strip() not in ("", "nan", "NaT") else pd.NaT
+                        upd_fields[col_db] = _dt_edit.strftime("%Y-%m-%d") if pd.notna(_dt_edit) else None
                     else:
-                        upd_fields[col_db] = str(val).strip() if val and str(val).strip() not in ("", "nan") else None
+                        v_str = str(val).strip() if val and str(val).strip() not in ("", "nan") else None
+                        upd_fields[col_db] = _padroniza_texto(col_db, v_str)
                 if update_audiencia(str(id_reg), upd_fields):
                     ok_upd += 1
                 else:
