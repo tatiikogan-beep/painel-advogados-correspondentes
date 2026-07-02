@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="Painel - Advogados Correspondentes",
     page_icon="\u2696\ufe0f",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 COR_VERMELHO = "#8B1A1A"
@@ -30,11 +30,10 @@ def get_logo_b64():
 
 st.markdown(f"""
 <style>
-[data-testid="stSidebar"] {{
-    background: linear-gradient(180deg, {COR_VERMELHO} 0%, #5C1010 100%);
-}}
-[data-testid="stSidebar"] * {{
-    color: {COR_BRANCO} !important;
+/* Sem menu lateral - a navegacao fica no topo da pagina, dando mais
+   espaco horizontal para o conteudo das abas. */
+[data-testid="stSidebar"], [data-testid="collapsedControl"] {{
+    display: none !important;
 }}
 .stButton > button {{
     background-color: {COR_VERMELHO};
@@ -56,17 +55,31 @@ st.markdown(f"""
 }}
 .metric-card h3 {{ margin: 0; font-size: 2rem; color: {COR_VERMELHO}; }}
 .metric-card p  {{ margin: 0; font-size: 0.85rem; color: #555; font-weight: 600; }}
-[data-testid="stSidebar"] .stRadio label p {{ font-size: 1.1rem !important; }}
-/* Reduz o espaco em branco no topo do menu lateral, aproximando a
-   navegacao do logotipo e aumentando a area util para o conteudo. */
-[data-testid="stSidebarUserContent"] {{
-    padding-top: 1.2rem !important;
+/* Navegacao horizontal no topo, no lugar do antigo menu lateral
+   (unico st.radio da aplicacao, seguro usar o seletor global). */
+[data-testid="stRadio"] > div[role="radiogroup"] {{
+    flex-direction: row !important;
+    gap: 10px;
+    flex-wrap: wrap;
 }}
-section[data-testid="stSidebar"] > div:first-child {{
-    padding-top: 1.2rem !important;
+[data-testid="stRadio"] label {{
+    background: {COR_CINZA_BG};
+    border: 1px solid #e2e2e2;
+    border-radius: 20px;
+    padding: 6px 18px 6px 10px;
+    margin: 0 !important;
 }}
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {{
-    gap: 0.35rem !important;
+[data-testid="stRadio"] label p {{
+    font-size: 0.95rem !important;
+    font-weight: 600;
+    color: {COR_VERMELHO};
+}}
+[data-testid="stRadio"] label:has(input:checked) {{
+    background: {COR_VERMELHO};
+    border-color: {COR_VERMELHO};
+}}
+[data-testid="stRadio"] label:has(input:checked) p {{
+    color: {COR_BRANCO} !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -297,32 +310,11 @@ ETIQUETAS_FIN_CORES = {
 }
 logo_b64 = get_logo_b64()
 if logo_b64:
-    st.sidebar.markdown(
-        f'<div style="text-align:center;padding:0 0 6px;">'
-        f'<img src="data:image/png;base64,{logo_b64}" style="width:110px;border-radius:8px;"></div>',
-        unsafe_allow_html=True
-    )
-else:
-    st.sidebar.markdown(
-        f'<div style="text-align:center;padding:0 0 6px;color:{COR_DOURADO};'
-        f'font-size:1.2rem;font-weight:700;">IG Advogados</div>',
-        unsafe_allow_html=True
-    )
-
-st.sidebar.markdown(f'<p style="color:{COR_DOURADO};font-size:0.75rem;text-align:center;'
-                    f'margin-bottom:8px;">Advogados Correspondentes</p>', unsafe_allow_html=True)
-
-PAGINAS = ["Gestao de Correspondentes", "Gestao Financeira"]
-st.sidebar.markdown('<p style="font-size:0.7rem;color:rgba(255,255,255,0.5);'
-                    'margin-bottom:2px;">NAVEGACAO</p>', unsafe_allow_html=True)
-pagina = st.sidebar.radio("NAVEGACAO", PAGINAS, label_visibility="collapsed")
-
-if logo_b64:
     st.markdown(
         f'<div style="display:flex;align-items:center;gap:16px;'
         f'background:linear-gradient(90deg,{COR_VERMELHO},{COR_DESTAQUE});'
-        f'padding:14px 24px;border-radius:10px;margin-bottom:24px;">'
-        f'<img src="data:image/png;base64,{logo_b64}" style="height:56px;border-radius:6px;">'
+        f'padding:14px 24px;border-radius:10px;margin-bottom:14px;">'
+        f'<img src="data:image/png;base64,{logo_b64}" style="height:48px;border-radius:6px;">'
         f'<div><h2 style="margin:0;color:{COR_BRANCO};">Advogados Correspondentes</h2>'
         f'<p style="margin:0;color:{COR_DOURADO};font-size:0.85rem;">'
         f'Imaculada Gordiano Sociedade de Advogados</p></div></div>',
@@ -331,12 +323,17 @@ if logo_b64:
 else:
     st.markdown(
         f'<div style="background:linear-gradient(90deg,{COR_VERMELHO},{COR_DESTAQUE});'
-        f'padding:14px 24px;border-radius:10px;margin-bottom:24px;">'
+        f'padding:14px 24px;border-radius:10px;margin-bottom:14px;">'
         f'<h2 style="margin:0;color:{COR_BRANCO};">Advogados Correspondentes</h2>'
         f'<p style="margin:0;color:{COR_DOURADO};font-size:0.85rem;">'
         f'Imaculada Gordiano Sociedade de Advogados</p></div>',
         unsafe_allow_html=True
     )
+
+# Navegacao horizontal no topo da pagina (substitui o antigo menu lateral).
+PAGINAS = ["Gestao de Correspondentes", "Gestao Financeira"]
+pagina = st.radio("NAVEGACAO", PAGINAS, horizontal=True, label_visibility="collapsed")
+st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
 
 if pagina == "Gestao de Correspondentes":
     st.subheader("Gestao de Correspondentes")
