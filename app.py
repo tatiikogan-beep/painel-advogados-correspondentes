@@ -374,21 +374,38 @@ elif pagina == "Gestao de Correspondentes (teste)":
                            if str(e).strip() and str(e).strip().lower() not in ("nan", "none")})
     opcoes_tags_gc = sorted(set(lista_tags_reg) | set(tags_usadas) | set(etiq_legadas))
 
-    _CAMPOS_BUSCA_GC = ["nome", "oab", "telefone", "email", "cidade", "estado",
-                        "empresa", "cliente", "tipo", "obs"]
-    def _bate_busca_geral(row, termo_norm):
-        campos = " ".join(str(row.get(c) or "") for c in _CAMPOS_BUSCA_GC)
-        tags_txt = " ".join(_split_tags(row.get("etiquetas")) + [str(row.get("etiqueta") or "")])
-        return termo_norm in _normaliza_txt(campos + " " + tags_txt)
+    # Autocompletar por nome: monta a lista de opcoes (uma por correspondente,
+    # com desambiguacao quando o mesmo nome aparece mais de uma vez) - o
+    # proprio st.selectbox do Streamlit ja filtra as opcoes conforme se digita,
+    # funcionando como autocompletar nativo.
+    def _monta_opcoes_nome(df_base):
+        mapa = {}
+        if df_base.empty:
+            return mapa
+        contagem = df_base["nome"].fillna("").astype(str).str.strip().value_counts()
+        for _, r in df_base.iterrows():
+            nome = str(r.get("nome") or "").strip()
+            if not nome:
+                continue
+            rotulo = nome
+            if contagem.get(nome, 0) > 1:
+                extra = str(r.get("cidade") or "").strip()
+                rotulo = f"{nome} — {extra}" if extra else nome
+            if rotulo in mapa:
+                rotulo = f"{rotulo} (ID {r.get('id')})"
+            mapa[rotulo] = str(r.get("id"))
+        return mapa
 
-    def _aplica_filtros_gc(df_base, f_nome, f_estado, f_cidade, f_tags):
+    opcoes_nome_map_gc = _monta_opcoes_nome(df_gc)
+    opcoes_nome_lista_gc = [""] + sorted(opcoes_nome_map_gc.keys(), key=_normaliza_txt)
+
+    def _aplica_filtros_gc(df_base, id_sel, f_estado, f_cidade, f_tags):
         dfx = df_base.copy()
         for col in dfx.columns:
             if dfx[col].dtype == object:
                 dfx[col] = dfx[col].fillna("")
-        if f_nome:
-            _termo = _normaliza_txt(f_nome)
-            dfx = dfx[dfx.apply(lambda r: _bate_busca_geral(r, _termo), axis=1)]
+        if id_sel:
+            dfx = dfx[dfx["id"].astype(str) == str(id_sel)]
         if f_estado: dfx = dfx[dfx["estado"] == f_estado]
         if f_cidade: dfx = dfx[dfx["cidade"].str.contains(f_cidade, case=False, na=False)]
         if f_tags:
@@ -405,9 +422,11 @@ elif pagina == "Gestao de Correspondentes (teste)":
     # Le os filtros do estado da sessao (definidos pelos widgets mais abaixo) para
     # que os indicadores acima ja reflitam a pesquisa feita na aba Registros,
     # mesmo estando posicionados antes dos widgets no layout da pagina.
+    _nome_sel_gc = st.session_state.get("gc_f_nome", "")
+    _id_sel_gc = opcoes_nome_map_gc.get(_nome_sel_gc, "")
     _dff_metricas = _aplica_filtros_gc(
         df_gc,
-        st.session_state.get("gc_f_nome", ""),
+        _id_sel_gc,
         st.session_state.get("gc_f_estado", ""),
         st.session_state.get("gc_f_cidade", ""),
         st.session_state.get("gc_f_tags", []),
@@ -422,12 +441,12 @@ elif pagina == "Gestao de Correspondentes (teste)":
         v = str(v or "").strip()
         return v if v and v.lower() not in ("nan", "none", "null") else "Nao informado"
 
-    # Caixa de informacoes do correspondente: so exibe conteudo quando ha
-    # pesquisa por nome (mesma limitacao ja explicada - Streamlit nao permite
-    # combinar hover-card com edicao em celula na mesma tabela).
-    _nome_busca_gc = st.session_state.get("gc_f_nome", "")
+    # Caixa de informacoes do correspondente: so exibe conteudo quando um nome
+    # foi selecionado no autocompletar (mesma limitacao ja explicada -
+    # Streamlit nao permite combinar hover-card com edicao em celula na
+    # mesma tabela).
     _conteudo_card_gc = ""
-    if _nome_busca_gc and not _dff_metricas.empty:
+    if _nome_sel_gc and not _dff_metricas.empty:
         _LIMITE_CARD_GC = 5
         _linhas_card_gc = [
             f"Nome: {_campo_ou_nao_informado(r.get('nome'))} | "
@@ -464,7 +483,7 @@ elif pagina == "Gestao de Correspondentes (teste)":
     )
     if not df_gc.empty:
         st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros. A ultima caixa "
-                   "mostra Nome, OAB, E-mail e Telefone (texto copiavel) apenas quando ha pesquisa por Nome.")
+                   "mostra Nome, OAB, E-mail e Telefone (texto copiavel) apenas quando um nome for selecionado.")
     st.markdown("---")
 
     gc_tab_reg, gc_tab_cad = st.tabs(
@@ -478,15 +497,15 @@ elif pagina == "Gestao de Correspondentes (teste)":
         else:
             opcoes_tags = opcoes_tags_gc
             col1, col2, col3, col4 = st.columns(4)
-            gc_f_nome   = col1.text_input(
-                "Buscar por Nome", key="gc_f_nome",
-                help="Busca em todos os campos do cadastro (nome, OAB, telefone, e-mail, cidade, "
-                     "estado, empresa, cliente, tipo, observacoes) e nas etiquetas.")
+            gc_f_nome_sel = col1.selectbox(
+                "Buscar por Nome", opcoes_nome_lista_gc, key="gc_f_nome",
+                help="Comece a digitar para filtrar a lista de nomes e selecione o correspondente desejado.")
+            gc_f_id_sel = opcoes_nome_map_gc.get(gc_f_nome_sel, "")
             gc_f_estado = col2.selectbox("Filtrar por Estado", [""] + ESTADOS[1:], key="gc_f_estado")
             gc_f_cidade = col3.text_input("Filtrar por Cidade", key="gc_f_cidade")
             gc_f_tags   = col4.multiselect("Filtrar por Etiquetas (uma ou mais)", opcoes_tags, key="gc_f_tags",
                                             help="Retorna correspondentes que possuam pelo menos uma das etiquetas selecionadas.")
-            dff = _aplica_filtros_gc(df, gc_f_nome, gc_f_estado, gc_f_cidade, gc_f_tags)
+            dff = _aplica_filtros_gc(df, gc_f_id_sel, gc_f_estado, gc_f_cidade, gc_f_tags)
             st.write(f"**{len(dff)} registro(s) encontrado(s)**")
 
             # Cadastro de Correspondentes: tabela unica, editavel, com dropdown de etiqueta.
