@@ -510,6 +510,16 @@ elif pagina == "Gestao Financeira":
     def fmt_brl(v):
         return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
 
+    def _chave_duplicidade(numero_cnj, data_val, hora_val, cliente_val, id_audiencia_val=None):
+        id_a = str(id_audiencia_val or "").strip().lower()
+        if id_a and id_a not in ("nan", "none", "null"):
+            return f"id:{id_a}"
+        cnj = str(numero_cnj or "").strip().lower()
+        dat = str(data_val or "").strip()
+        hor = str(hora_val or "").strip().lower()
+        cli = str(cliente_val or "").strip().lower()
+        return f"cnj:{cnj}|data:{dat}|hora:{hor}|cliente:{cli}"
+
     df_db = load_audiencias()
     if not df_db.empty:
         inv = {v: k for k, v in MAPA_DB.items()}
@@ -562,6 +572,26 @@ elif pagina == "Gestao Financeira":
     if st.button("Atualizar dados (recarregar do banco)", key="fin_refresh"):
         st.cache_data.clear()
         st.rerun()
+
+    if not df_fin.empty:
+        _dup_chaves = df_fin.apply(
+            lambda r: _chave_duplicidade(r.get("Numero CNJ"), r.get("Data"), r.get("Hora de Inicio"),
+                                          r.get("Cliente Processo"), r.get("ID")),
+            axis=1,
+        )
+        _dup_cont = _dup_chaves.value_counts()
+        _chaves_duplicadas = set(_dup_cont[_dup_cont > 1].index)
+        if _chaves_duplicadas:
+            df_duplicados = df_fin[_dup_chaves.isin(_chaves_duplicadas)].copy()
+            df_duplicados["_chave_dup"] = _dup_chaves[_dup_chaves.isin(_chaves_duplicadas)]
+            df_duplicados = df_duplicados.sort_values("_chave_dup")
+            with st.expander(f"{len(df_duplicados)} lancamento(s) em possivel duplicidade encontrados no banco", expanded=False):
+                st.caption("Registros com o mesmo Numero CNJ/ID + Data + Hora + Cliente. Revise antes de excluir manualmente os repetidos.")
+                cols_dup = [c for c in ["id", "Data", "Hora de Inicio", "Numero CNJ", "Cliente Processo",
+                                         "Empresa Correspondente", "VALOR", "Etiqueta Financeira"] if c in df_duplicados.columns]
+                st.dataframe(df_duplicados[cols_dup], hide_index=True, use_container_width=True)
+        else:
+            st.caption("Nenhuma duplicidade encontrada nos lancamentos ja salvos no banco.")
 
     dff = df_fin.copy()
     for c in dff.columns:
@@ -715,6 +745,7 @@ elif pagina == "Gestao Financeira":
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="fin_modelo")
 
     if arq_fin is not None:
+        _arq_fin_id = getattr(arq_fin, "file_id", None) or f"{arq_fin.name}_{arq_fin.size}"
         try:
             if arq_fin.name.endswith(".csv"):
                 df_novo = pd.read_csv(arq_fin, dtype=str)
@@ -798,7 +829,7 @@ elif pagina == "Gestao Financeira":
                 "Reembolsavel": st.column_config.SelectboxColumn(
                     "Reembolsavel", options=["", "Sim", "Nao"], required=False),
             }
-            df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], column_config=_conf_col_cfg, key="fin_editor")
+            df_edit = st.data_editor(df_conf[cols_editor], hide_index=True, use_container_width=True, num_rows="fixed", disabled=["Conferencia"], column_config=_conf_col_cfg, key=f"fin_editor_{_arq_fin_id}")
             df_final = df_novo.copy()
             for c in cols_editor:
                 if c != "Conferencia" and c in df_edit.columns:
@@ -876,10 +907,33 @@ elif pagina == "Gestao Financeira":
                     registros.append(rec)
                 if registros:
                     sb = get_supabase()
+                    try:
+                        existentes_resp = sb.table("audiencias").select(
+                            "id_audiencia,numero_cnj,data,hora_inicio,cliente"
+                        ).execute()
+                        existentes = existentes_resp.data or []
+                    except Exception:
+                        existentes = []
+                    chaves_existentes = {
+                        _chave_duplicidade(r.get("numero_cnj"), r.get("data"), r.get("hora_inicio"),
+                                            r.get("cliente"), r.get("id_audiencia"))
+                        for r in existentes
+                    }
+                    registros_novos = []
+                    chaves_no_lote = set()
+                    duplicados = 0
+                    for rec in registros:
+                        chave = _chave_duplicidade(rec.get("numero_cnj"), rec.get("data"), rec.get("hora_inicio"),
+                                                    rec.get("cliente"), rec.get("id_audiencia"))
+                        if chave in chaves_existentes or chave in chaves_no_lote:
+                            duplicados += 1
+                            continue
+                        chaves_no_lote.add(chave)
+                        registros_novos.append(rec)
                     total_ok = 0
                     erros = []
-                    for i in range(0, len(registros), 200):
-                        lote = registros[i:i+200]
+                    for i in range(0, len(registros_novos), 200):
+                        lote = registros_novos[i:i+200]
                         try:
                             resp = sb.table("audiencias").insert(lote).execute()
                             total_ok += len(resp.data) if resp.data else 0
@@ -891,10 +945,11 @@ elif pagina == "Gestao Financeira":
                         total_banco = chk.count if getattr(chk, "count", None) is not None else "?"
                     except Exception:
                         total_banco = "?"
+                    msg_dup = f" {duplicados} registro(s) ignorado(s) por duplicidade (ja existiam ou repetidos na planilha)." if duplicados else ""
                     if erros:
-                        st.error(f"Importados {total_ok} de {len(registros)}. Total no banco: {total_banco}. Erros: " + " | ".join(erros[:3]))
+                        st.error(f"Importados {total_ok} de {len(registros_novos)}.{msg_dup} Total no banco: {total_banco}. Erros: " + " | ".join(erros[:3]))
                     else:
-                        st.success(f"{total_ok} registro(s) importado(s). Total no banco agora: {total_banco}.")
+                        st.success(f"{total_ok} registro(s) importado(s).{msg_dup} Total no banco agora: {total_banco}.")
                         st.rerun()
         except Exception as e:
             st.error(f"Erro ao processar a planilha: {e}")
