@@ -81,8 +81,44 @@ st.markdown(f"""
 [data-testid="stRadio"] label:has(input:checked) p {{
     color: {COR_BRANCO} !important;
 }}
+/* Espacamento uniforme entre cards de indicadores e entre graficos. */
+.metric-card {{
+    margin-bottom: 20px;
+}}
+[data-testid="stPlotlyChart"] {{
+    margin-bottom: 20px;
+}}
 </style>
 """, unsafe_allow_html=True)
+
+# Padronizacao visual dos graficos da Gestao Financeira: mesmo tamanho de
+# fonte para titulo/eixos/legenda/rotulos em todos os graficos, sem eixo
+# numerico (o valor fica direto sobre a barra).
+FONTE_GRAFICO_TITULO = 15
+FONTE_GRAFICO_EIXO = 12
+FONTE_GRAFICO_ROTULO = 13
+
+def padroniza_grafico(fig, altura=300, rotulo_size=FONTE_GRAFICO_ROTULO, categoria_eixo="x"):
+    fig.update_layout(
+        height=altura,
+        margin=dict(l=10, r=10, t=48, b=10),
+        title_font_size=FONTE_GRAFICO_TITULO,
+        font=dict(size=FONTE_GRAFICO_EIXO),
+        legend=dict(font=dict(size=FONTE_GRAFICO_EIXO)),
+        uniformtext_minsize=rotulo_size,
+        uniformtext_mode="hide",
+    )
+    fig.update_traces(textfont_size=rotulo_size)
+    # Remove o eixo numerico (o oposto do eixo de categoria), mantendo so
+    # os rotulos das categorias e os valores diretamente sobre as barras.
+    eixo_numerico = "y" if categoria_eixo == "x" else "x"
+    if eixo_numerico == "y":
+        fig.update_yaxes(visible=False, showticklabels=False, title=None)
+        fig.update_xaxes(title=None, tickfont=dict(size=FONTE_GRAFICO_EIXO))
+    else:
+        fig.update_xaxes(visible=False, showticklabels=False, title=None)
+        fig.update_yaxes(title=None, tickfont=dict(size=FONTE_GRAFICO_EIXO))
+    return fig
 
 @st.cache_resource
 def get_supabase() -> Client:
@@ -1041,21 +1077,29 @@ elif pagina == "Gestao Financeira":
     qtd_lanc = len(dff)
     meses_pt = ["janeiro","fevereiro","marco","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"]
     legenda = f"{data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}" if (data_ini and data_fim) else f"{meses_pt[hoje.month-1]}/{hoje.year}"
-    cm1, cm2 = st.columns(2)
+    cm1, cm2 = st.columns(2, gap="large")
     cm1.markdown(f'<div class="metric-card"><h3>{fmt_brl(total_contratado)}</h3><p>Total Contratado ({legenda})</p></div>', unsafe_allow_html=True)
     cm2.markdown(f'<div class="metric-card"><h3>{qtd_lanc}</h3><p>Lancamentos no periodo</p></div>', unsafe_allow_html=True)
 
     if dff.empty:
         st.info("Sem dados no periodo/filtros selecionados. Ajuste o filtro de data (padrao: mes vigente) ou importe uma planilha.")
     else:
-        ALT_GRAF = 260
-        g1, g2 = st.columns(2)
+        g1, g2 = st.columns(2, gap="large")
         tc = dff.groupby("_cli_canon").size().reset_index(name="Quantidade")
         tc.columns = ["Cliente", "Quantidade"]
         tc = tc[tc["Quantidade"] > 0].sort_values("Quantidade", ascending=False).head(10)
         if not tc.empty:
-            fig_tc = px.bar(tc, x="Quantidade", y="Cliente", orientation="h", title="Total por Cliente (10 maiores)", text_auto=True, color_discrete_sequence=[COR_VERMELHO])
-            fig_tc.update_layout(yaxis={"categoryorder": "total ascending"}, height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
+            fig_tc = px.bar(tc, x="Quantidade", y="Cliente", orientation="h",
+                             title="Total por Cliente (10 maiores)", text_auto=True,
+                             color_discrete_sequence=[COR_VERMELHO])
+            # Barras mais finas (mais "ar" entre elas), rotulo maior, nomes
+            # dos clientes com fonte maior, sem eixo numerico. Nota: o
+            # rotulo na vertical (90 graus) foi testado e o texto sai
+            # corrompido/ilegivel neste combo Plotly+navegador - mantido na
+            # horizontal (fora da barra) para nao comprometer a leitura.
+            fig_tc.update_traces(width=0.45, textfont_size=16, textangle=0, textposition="outside")
+            fig_tc.update_yaxes(categoryorder="total ascending", tickfont=dict(size=14))
+            padroniza_grafico(fig_tc, altura=340, rotulo_size=16, categoria_eixo="y")
             g1.plotly_chart(fig_tc, use_container_width=True)
         vc = dff.dropna(subset=["_dt"]).copy()
         if not vc.empty:
@@ -1064,31 +1108,35 @@ elif pagina == "Gestao Financeira":
             vc.columns = ["MesData", "Quantidade"]
             vc = vc.sort_values("MesData")
             vc["Mes"] = vc["MesData"].dt.strftime("%m/%Y")
-            fig_vc = px.bar(vc, x="Mes", y="Quantidade", title="Total de contratacoes por mes", text_auto=True, color_discrete_sequence=[COR_DOURADO])
+            fig_vc = px.bar(vc, x="Mes", y="Quantidade", title="Total de contratacoes por mes",
+                             text_auto=True, color_discrete_sequence=[COR_DOURADO])
             fig_vc.update_xaxes(type="category")
-            fig_vc.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
+            padroniza_grafico(fig_vc, categoria_eixo="x")
             g2.plotly_chart(fig_vc, use_container_width=True)
-        g3, g4 = st.columns(2)
+        g3, g4 = st.columns(2, gap="large")
         ec = dff.groupby("Empresa Correspondente")["_valor_num"].sum().reset_index()
         ec.columns = ["Empresa", "Total"]
         ec = ec[(ec["Empresa"].astype(str).str.strip() != "") & (ec["Total"] > 0)].sort_values("Total", ascending=False).head(15)
         if not ec.empty:
-            fig_ec = px.bar(ec, x="Empresa", y="Total", title="Empresa Contratada", text_auto=".2s", color_discrete_sequence=[COR_DESTAQUE])
-            fig_ec.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
+            fig_ec = px.bar(ec, x="Empresa", y="Total", title="Empresa Contratada",
+                             text_auto=".2s", color_discrete_sequence=[COR_DESTAQUE])
+            padroniza_grafico(fig_ec, categoria_eixo="x")
             g3.plotly_chart(fig_ec, use_container_width=True)
         te = dff.groupby("UF").size().reset_index(name="Quantidade")
         te.columns = ["UF", "Quantidade"]
         te = te[(te["UF"].astype(str).str.strip() != "") & (te["Quantidade"] > 0)].sort_values("Quantidade", ascending=False)
         if not te.empty:
-            fig_te = px.bar(te, x="UF", y="Quantidade", title="Total por Estado", text_auto=True, color_discrete_sequence=[COR_VERMELHO])
-            fig_te.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
+            fig_te = px.bar(te, x="UF", y="Quantidade", title="Total por Estado",
+                             text_auto=True, color_discrete_sequence=[COR_VERMELHO])
+            padroniza_grafico(fig_te, categoria_eixo="x")
             g4.plotly_chart(fig_te, use_container_width=True)
         tcid = dff.groupby("Cidade").size().reset_index(name="Quantidade")
         tcid.columns = ["Cidade", "Quantidade"]
         tcid = tcid[(tcid["Cidade"].astype(str).str.strip() != "") & (tcid["Quantidade"] > 0)].sort_values("Quantidade", ascending=False).head(15)
         if not tcid.empty:
-            fig_tcid = px.bar(tcid, x="Cidade", y="Quantidade", title="Total por Cidade (15 maiores)", text_auto=True, color_discrete_sequence=[COR_DOURADO])
-            fig_tcid.update_layout(height=ALT_GRAF, margin=dict(l=10, r=10, t=40, b=10))
+            fig_tcid = px.bar(tcid, x="Cidade", y="Quantidade", title="Total por Cidade (15 maiores)",
+                               text_auto=True, color_discrete_sequence=[COR_DOURADO])
+            padroniza_grafico(fig_tcid, categoria_eixo="x")
             st.plotly_chart(fig_tcid, use_container_width=True)
 
     st.markdown("---")
