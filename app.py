@@ -598,12 +598,14 @@ elif pagina == "Gestao de Correspondentes (teste)":
                 st.info("Execute o SQL de configuracao acima para habilitar as etiquetas.")
             elif not opcoes_tags:
                 st.info("Nenhuma etiqueta cadastrada ainda. Crie etiquetas no gerenciador abaixo.")
+            elif dff.empty:
+                st.info("Nenhum correspondente encontrado com os filtros atuais.")
             else:
-                st.caption("Selecione o correspondente e marque uma ou mais etiquetas na lista.")
-                opcoes_corr = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in df.iterrows()}
+                st.caption("Selecione o correspondente (lista considera os filtros/busca acima) e marque uma ou mais etiquetas.")
+                opcoes_corr = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in dff.iterrows()}
                 sel_corr = st.selectbox("Correspondente", list(opcoes_corr.keys()), key="gc_tag_corr")
                 id_corr = opcoes_corr[sel_corr]
-                reg_corr = df[df["id"] == id_corr].iloc[0]
+                reg_corr = dff[dff["id"] == id_corr].iloc[0]
                 tags_atuais = [t for t in _split_tags(reg_corr.get("etiquetas")) if t in opcoes_tags]
                 novas_tags = st.multiselect("Etiquetas deste correspondente", opcoes_tags,
                                              default=tags_atuais, key=f"gc_tag_sel_{id_corr}")
