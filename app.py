@@ -108,7 +108,9 @@ def padroniza_grafico(fig, altura=300, rotulo_size=FONTE_GRAFICO_ROTULO, categor
         uniformtext_minsize=rotulo_size,
         uniformtext_mode="hide",
     )
-    fig.update_traces(textfont_size=rotulo_size)
+    # "outside" posiciona o rotulo acima da barra (grafico vertical) ou
+    # apos a barra (grafico horizontal) - nunca por dentro/sobreposto.
+    fig.update_traces(textfont_size=rotulo_size, textposition="outside", cliponaxis=False)
     # Remove o eixo numerico (o oposto do eixo de categoria), mantendo so
     # os rotulos das categorias e os valores diretamente sobre as barras.
     eixo_numerico = "y" if categoria_eixo == "x" else "x"
