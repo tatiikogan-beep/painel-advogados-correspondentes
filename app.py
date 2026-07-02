@@ -510,7 +510,8 @@ elif pagina == "Gestao Financeira":
     def fmt_brl(v):
         return "R$ " + ("%0.2f" % float(v or 0)).replace(",", "X").replace(".", ",").replace("X", ".")
 
-    def _chave_duplicidade(numero_cnj, data_val, hora_val, cliente_val, id_audiencia_val=None):
+    def _chave_duplicidade(numero_cnj, data_val, hora_val, cliente_val, id_audiencia_val=None,
+                            solicitacao_val=None, contrario_val=None, valor_val=None):
         id_a = str(id_audiencia_val or "").strip().lower()
         if id_a and id_a not in ("nan", "none", "null"):
             return f"id:{id_a}"
@@ -518,7 +519,17 @@ elif pagina == "Gestao Financeira":
         dat = str(data_val or "").strip()
         hor = str(hora_val or "").strip().lower()
         cli = str(cliente_val or "").strip().lower()
-        return f"cnj:{cnj}|data:{dat}|hora:{hor}|cliente:{cli}"
+        sol = str(solicitacao_val or "").strip().lower()
+        con = str(contrario_val or "").strip().lower()
+        try:
+            val = f"{float(str(valor_val).replace(',', '.')):.2f}" if valor_val not in (None, "") else ""
+        except (TypeError, ValueError):
+            val = str(valor_val or "").strip().lower()
+        # Uma mesma audiencia (CNJ+data+hora+cliente) pode ter mais de um
+        # lancamento legitimo (ex.: um para "Preposto" e outro para
+        # "Advogado"), por isso solicitacao/contrario/valor tambem entram
+        # na chave para nao tratar esses casos como duplicidade.
+        return f"cnj:{cnj}|data:{dat}|hora:{hor}|cliente:{cli}|sol:{sol}|contrario:{con}|valor:{val}"
 
     df_db = load_audiencias()
     if not df_db.empty:
@@ -576,7 +587,8 @@ elif pagina == "Gestao Financeira":
     if not df_fin.empty:
         _dup_chaves = df_fin.apply(
             lambda r: _chave_duplicidade(r.get("Numero CNJ"), r.get("Data"), r.get("Hora de Inicio"),
-                                          r.get("Cliente Processo"), r.get("ID")),
+                                          r.get("Cliente Processo"), r.get("ID"), r.get("Solicitacao"),
+                                          r.get("Contrario Principal"), r.get("VALOR")),
             axis=1,
         )
         _dup_cont = _dup_chaves.value_counts()
@@ -909,14 +921,15 @@ elif pagina == "Gestao Financeira":
                     sb = get_supabase()
                     try:
                         existentes_resp = sb.table("audiencias").select(
-                            "id_audiencia,numero_cnj,data,hora_inicio,cliente"
+                            "id_audiencia,numero_cnj,data,hora_inicio,cliente,solicitacao,parte_contraria,valor"
                         ).execute()
                         existentes = existentes_resp.data or []
                     except Exception:
                         existentes = []
                     chaves_existentes = {
                         _chave_duplicidade(r.get("numero_cnj"), r.get("data"), r.get("hora_inicio"),
-                                            r.get("cliente"), r.get("id_audiencia"))
+                                            r.get("cliente"), r.get("id_audiencia"), r.get("solicitacao"),
+                                            r.get("parte_contraria"), r.get("valor"))
                         for r in existentes
                     }
                     registros_novos = []
@@ -924,7 +937,8 @@ elif pagina == "Gestao Financeira":
                     duplicados = 0
                     for rec in registros:
                         chave = _chave_duplicidade(rec.get("numero_cnj"), rec.get("data"), rec.get("hora_inicio"),
-                                                    rec.get("cliente"), rec.get("id_audiencia"))
+                                                    rec.get("cliente"), rec.get("id_audiencia"), rec.get("solicitacao"),
+                                                    rec.get("parte_contraria"), rec.get("valor"))
                         if chave in chaves_existentes or chave in chaves_no_lote:
                             duplicados += 1
                             continue
