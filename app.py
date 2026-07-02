@@ -333,10 +333,24 @@ if pagina == "Dashboard":
 # Cadastro
 elif pagina == "Gestao de Correspondentes (teste)":
     st.subheader("Gestao de Correspondentes")
-    st.caption("Versao de teste - reune tudo em uma unica tela: a aba Registros permite consultar, "
-               "editar e excluir; a aba Cadastro e Importacao concentra o cadastro manual e a "
-               "importacao de planilhas. As abas antigas continuam funcionando normalmente ate "
-               "esta versao ser aprovada.")
+    st.caption("Versao de teste - reune tudo em uma unica tela: os indicadores do painel, "
+               "a aba Registros (consultar, editar e excluir) e a aba Cadastro e Importacao. "
+               "As abas antigas continuam funcionando normalmente ate esta versao ser aprovada.")
+
+    df_metricas = load_data()
+    gc_total      = len(df_metricas)
+    gc_municipios = df_metricas["cidade"].nunique() if "cidade" in df_metricas.columns and not df_metricas.empty else 0
+    gc_ufs        = df_metricas["estado"].nunique() if "estado" in df_metricas.columns and not df_metricas.empty else 0
+    gc_empresas   = df_metricas["empresa"].nunique() if "empresa" in df_metricas.columns and not df_metricas.empty else 0
+    gm1, gm2, gm3, gm4 = st.columns(4)
+    for col, val, label in [
+        (gm1, gc_total,      "Total Correspondentes"),
+        (gm2, gc_municipios, "Municipios Atendidos"),
+        (gm3, gc_ufs,        "UFs Atendidas"),
+        (gm4, gc_empresas,   "Empresas"),
+    ]:
+        col.markdown(f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>', unsafe_allow_html=True)
+    st.markdown("---")
 
     gc_tab_reg, gc_tab_cad = st.tabs(
         ["Registros", "Cadastro e Importacao"])
