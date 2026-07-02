@@ -6,6 +6,7 @@ from supabase import create_client, Client
 import io
 import base64
 import os
+import html
 
 st.set_page_config(
     page_title="Painel - Advogados Correspondentes",
@@ -407,7 +408,30 @@ elif pagina == "Gestao de Correspondentes (teste)":
     gc_municipios = _dff_metricas["cidade"].nunique() if "cidade" in _dff_metricas.columns and not _dff_metricas.empty else 0
     gc_ufs        = _dff_metricas["estado"].nunique() if "estado" in _dff_metricas.columns and not _dff_metricas.empty else 0
     gc_empresas   = _dff_metricas["empresa"].nunique() if "empresa" in _dff_metricas.columns and not _dff_metricas.empty else 0
-    gm1, gm2, gm3, gm4 = st.columns(4)
+
+    def _campo_ou_nao_informado(v):
+        v = str(v or "").strip()
+        return v if v and v.lower() not in ("nan", "none", "null") else "Nao informado"
+
+    # Caixa de informacoes do correspondente: so exibe conteudo quando ha
+    # pesquisa por nome (mesma limitacao ja explicada - Streamlit nao permite
+    # combinar hover-card com edicao em celula na mesma tabela).
+    _nome_busca_gc = st.session_state.get("gc_f_nome", "")
+    _conteudo_card_gc = ""
+    if _nome_busca_gc and not _dff_metricas.empty:
+        _LIMITE_CARD_GC = 5
+        _linhas_card_gc = [
+            f"Nome: {_campo_ou_nao_informado(r.get('nome'))} | "
+            f"OAB: {_campo_ou_nao_informado(r.get('oab'))} | "
+            f"E-mail: {_campo_ou_nao_informado(r.get('email'))} | "
+            f"Telefone: {_campo_ou_nao_informado(r.get('telefone'))}"
+            for _, r in _dff_metricas.head(_LIMITE_CARD_GC).iterrows()
+        ]
+        if len(_dff_metricas) > _LIMITE_CARD_GC:
+            _linhas_card_gc.append(f"... e mais {len(_dff_metricas) - _LIMITE_CARD_GC} correspondente(s).")
+        _conteudo_card_gc = "<br>".join(html.escape(l) for l in _linhas_card_gc)
+
+    gm1, gm2, gm3, gm4, gm5 = st.columns([1, 1, 1, 1, 2])
     for col, val, label in [
         (gm1, gc_total,      "Total Correspondentes"),
         (gm2, gc_municipios, "Municipios Atendidos"),
@@ -415,8 +439,16 @@ elif pagina == "Gestao de Correspondentes (teste)":
         (gm4, gc_empresas,   "Empresas"),
     ]:
         col.markdown(f'<div class="metric-card"><h3>{val}</h3><p>{label}</p></div>', unsafe_allow_html=True)
+    gm5.markdown(
+        f'<div class="metric-card" style="text-align:left;min-height:88px;">'
+        f'<p style="margin:0 0 4px;font-size:0.78rem;font-weight:700;color:{COR_VERMELHO};">Dados do correspondente pesquisado</p>'
+        f'<div style="font-size:0.72rem;color:#333;line-height:1.5;user-select:text;">{_conteudo_card_gc}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     if not df_gc.empty:
-        st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros.")
+        st.caption("Os indicadores acima refletem os filtros aplicados na aba Registros. A caixa a direita "
+                   "mostra Nome, OAB, E-mail e Telefone (texto copiavel) apenas quando ha pesquisa por Nome.")
     st.markdown("---")
 
     gc_tab_reg, gc_tab_cad = st.tabs(
@@ -442,14 +474,20 @@ elif pagina == "Gestao de Correspondentes (teste)":
             st.markdown("#### Cadastro de Correspondentes")
             st.caption("Edite as celulas diretamente na tabela e clique em 'Gravar edicoes'. "
                        "Para excluir, marque a coluna 'Excluir' e use o botao de exclusao abaixo.")
-            GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs","etiqueta"]
+            GC_COLS_DB = ["nome","oab","telefone","cidade","estado","empresa","cliente","tipo","data","pagamento","obs"]
             if db_tem_email:
                 GC_COLS_DB.insert(2, "email")
-            if db_tem_tags:
-                GC_COLS_DB.append("etiquetas")
             gc_cols_edit = [c for c in GC_COLS_DB if c in dff.columns]
             df_gc_edit = dff[gc_cols_edit].copy()
             df_gc_edit.insert(0, "Excluir", False)
+            if db_tem_tags:
+                def _etiqueta_exibicao(row):
+                    tags = _split_tags(row.get("etiquetas"))
+                    legado = str(row.get("etiqueta", "") or "").strip()
+                    if legado and legado.lower() not in ("nan", "none") and legado not in tags:
+                        tags.append(legado)
+                    return _join_tags(tags) or ""
+                df_gc_edit["Etiqueta"] = dff.apply(_etiqueta_exibicao, axis=1).values
             df_gc_edit["_id"] = dff["id"].values if "id" in dff.columns else None
 
             gc_col_cfg = {
@@ -457,9 +495,8 @@ elif pagina == "Gestao de Correspondentes (teste)":
                                                             help="Marque para excluir este registro"),
                 "estado": st.column_config.SelectboxColumn("estado", options=ESTADOS, required=False),
                 "tipo": st.column_config.SelectboxColumn("tipo", options=TIPOS, required=False),
-                "etiqueta": st.column_config.SelectboxColumn("etiqueta", options=ETIQUETAS, required=False),
-                "etiquetas": st.column_config.TextColumn("etiquetas",
-                                                          help="Varias etiquetas separadas por ';' - prefira usar 'Atribuir etiquetas' abaixo"),
+                "Etiqueta": st.column_config.TextColumn("Etiqueta", disabled=True,
+                                                         help="Somente leitura - selecione uma ou mais etiquetas na lista logo abaixo da tabela."),
                 "_id": st.column_config.Column("ID", disabled=True),
             }
             df_gc_editado = st.data_editor(
@@ -534,25 +571,27 @@ elif pagina == "Gestao de Correspondentes (teste)":
                     if erros_del:
                         st.warning(f"{erros_del} registro(s) nao puderam ser excluidos.")
 
-            # Atribuir etiquetas
+            # Etiqueta: coluna somente leitura na tabela acima - a edicao (uma
+            # ou mais etiquetas por correspondente) e feita por esta lista.
             st.markdown("")
-            with st.expander("Atribuir etiquetas a um correspondente", expanded=False):
-                if not db_tem_tags:
-                    st.info("Execute o SQL de configuracao acima para habilitar as etiquetas.")
-                elif not opcoes_tags:
-                    st.info("Nenhuma etiqueta cadastrada ainda. Crie etiquetas no gerenciador abaixo.")
-                else:
-                    opcoes_corr = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in df.iterrows()}
-                    sel_corr = st.selectbox("Correspondente", list(opcoes_corr.keys()), key="gc_tag_corr")
-                    id_corr = opcoes_corr[sel_corr]
-                    reg_corr = df[df["id"] == id_corr].iloc[0]
-                    tags_atuais = [t for t in _split_tags(reg_corr.get("etiquetas")) if t in opcoes_tags]
-                    novas_tags = st.multiselect("Etiquetas deste correspondente", opcoes_tags,
-                                                 default=tags_atuais, key=f"gc_tag_sel_{id_corr}")
-                    if st.button("Salvar etiquetas do correspondente", key="gc_tag_salvar", type="primary"):
-                        if update_data(id_corr, {"etiquetas": _join_tags(novas_tags)}):
-                            st.success("Etiquetas atualizadas!")
-                            st.rerun()
+            st.markdown("##### Etiqueta")
+            if not db_tem_tags:
+                st.info("Execute o SQL de configuracao acima para habilitar as etiquetas.")
+            elif not opcoes_tags:
+                st.info("Nenhuma etiqueta cadastrada ainda. Crie etiquetas no gerenciador abaixo.")
+            else:
+                st.caption("Selecione o correspondente e marque uma ou mais etiquetas na lista.")
+                opcoes_corr = {f"{r.get('id')} - {r.get('nome','')}": r.get("id") for _, r in df.iterrows()}
+                sel_corr = st.selectbox("Correspondente", list(opcoes_corr.keys()), key="gc_tag_corr")
+                id_corr = opcoes_corr[sel_corr]
+                reg_corr = df[df["id"] == id_corr].iloc[0]
+                tags_atuais = [t for t in _split_tags(reg_corr.get("etiquetas")) if t in opcoes_tags]
+                novas_tags = st.multiselect("Etiquetas deste correspondente", opcoes_tags,
+                                             default=tags_atuais, key=f"gc_tag_sel_{id_corr}")
+                if st.button("Salvar etiquetas do correspondente", key="gc_tag_salvar", type="primary"):
+                    if update_data(id_corr, {"etiquetas": _join_tags(novas_tags)}):
+                        st.success("Etiquetas atualizadas!")
+                        st.rerun()
 
             # Gerenciar etiquetas (criar / renomear / excluir)
             with st.expander("Gerenciar etiquetas (criar, renomear, excluir)", expanded=False):
