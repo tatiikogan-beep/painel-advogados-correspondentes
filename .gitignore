@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+
+# Segredos locais - o app publicado usa os Secrets configurados no
+# painel do Streamlit Cloud, nao este arquivo.
+.streamlit/secrets.toml
